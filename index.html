@@ -90,6 +90,8 @@ tr:hover td{background:#19232C}
 .empty{text-align:center;padding:54px 20px;color:var(--muted)}
 .rate-card{flex:1;min-width:140px;padding:16px 18px;background:var(--surface2);border:1px solid var(--line);border-radius:12px}
 @media(max-width:640px){th,td{padding:9px 8px;font-size:12px}}
+.recharts-default-tooltip{background:#0D1318 !important;border:1px solid #2A3946 !important;border-radius:8px !important;color:#E7EEF4 !important}
+.recharts-tooltip-label,.recharts-tooltip-item,.recharts-tooltip-item-name,.recharts-tooltip-item-value,.recharts-tooltip-item-separator{color:#E7EEF4 !important}
 `;
 
 /* ============================== reference data ============================== */
@@ -309,7 +311,7 @@ function App() {
 
         {tab === "cartera" && <Cartera rows={rows} setHoldings={setHoldings} base={base} money={money} refRate={refRate} />}
         {tab === "ritmo" && <Ritmo rate={rate} totals={totals} pnlUSD={pnlUSD} refRate={refRate} />}
-        {tab === "evolucion" && <Evolucion rows={rows} history={history} totals={totals} base={base} money={money} refRate={refRate} />}
+        {tab === "evolucion" && <Evolucion rows={rows} history={history} totals={totals} base={base} money={money} refRate={refRate} aportes={aportes} />}
         {tab === "aportes" && <Aportes aportes={aportes} setAportes={setAportes} aportesUSD={aportesUSD} valUSD={totals.valUSD} setHoldings={setHoldings} refRate={refRate} ops={ops} setOps={setOps} />}
         {tab === "proyeccion" && <Proyeccion rows={rows} settings={settings} setSettings={setSettings} classStats={classStats} />}
         {tab === "historico" && <Historico />}
@@ -767,7 +769,13 @@ function Ritmo({ rate, totals, pnlUSD, refRate }) {
 }
 
 /* ============================== evolución tab ============================== */
-function Evolucion({ rows, history, totals, base, money, refRate }) {
+function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
+  const aportesAcum = useMemo(() => {
+    const byMonth = {};
+    (aportes || []).forEach(a => { const k = a.date.slice(0, 7); const usd = a.currency === "USD" ? +a.amount : (+a.amount) / (refRate || 1); byMonth[k] = (byMonth[k] || 0) + usd; });
+    const months = Object.keys(byMonth).sort();
+    let acc = 0; return months.map(m => { acc += byMonth[m]; return { mes: m, acum: acc, mensual: byMonth[m] }; });
+  }, [aportes, refRate]);
   const byClass = useMemo(() => { const m = {}; rows.forEach(r => { m[r.cls] = (m[r.cls] || 0) + r.m.valUSD; }); return Object.entries(m).map(([k, v]) => ({ name: CLASS_LABEL[k], value: v, color: CLASS_COLOR[k] })).filter(x => x.value > 0); }, [rows]);
   const byBroker = useMemo(() => { const m = {}; rows.forEach(r => { m[r.broker] = (m[r.broker] || 0) + (base === "ARS" ? r.m.valARS : r.m.valUSD); }); return Object.entries(m).map(([k, v]) => ({ name: k, value: v, hasCrypto: rows.some(r => r.broker === k && r.cls === "CRYPTO") })).filter(x => x.value > 0).sort((a, b) => b.value - a.value); }, [rows, base]);
   const totalBase = base === "ARS" ? totals.valARS : totals.valUSD;
@@ -813,9 +821,22 @@ function Evolucion({ rows, history, totals, base, money, refRate }) {
       </div>}
 
       <div className="panel" style={{ padding: 20 }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>Evolución del valor de cartera (US$)</div>
-        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Se construye con un snapshot cada vez que apretás "Actualizar". Cuantos más días, más rica la serie.</p>
-        {history.length < 2 ? <div className="empty" style={{ padding: 30 }}>Apretá "Actualizar" en distintos días para registrar la serie.</div> :
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Capital aportado acumulado (US$)</div>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Cuánto capital fuiste metiendo, mes a mes, desde el inicio. Es tu <strong className="cel">ritmo de inversión real</strong> — se dibuja con tus aportes históricos, no depende de snapshots.</p>
+        {aportesAcum.length < 2 ? <div className="empty" style={{ padding: 30 }}>Cargá aportes en la pestaña Aportes para ver la curva.</div> :
+          <ResponsiveContainer width="100%" height={260}><AreaChart data={aportesAcum}>
+            <defs><linearGradient id="gAp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#CBA45E" stopOpacity={.45} /><stop offset="100%" stopColor="#CBA45E" stopOpacity={0} /></linearGradient></defs>
+            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+            <XAxis dataKey="mes" stroke="#5C6F7E" fontSize={10} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+            <Tooltip contentStyle={ttStyle} formatter={(v, n) => [fmtUSD(v), n === "acum" ? "Acumulado" : "Aporte del mes"]} />
+            <Area type="monotone" dataKey="acum" stroke="#CBA45E" strokeWidth={2.5} fill="url(#gAp)" />
+          </AreaChart></ResponsiveContainer>}
+      </div>
+
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Valor de cartera en el tiempo (US$)</div>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Esta serie se construye <strong className="cel">hacia adelante</strong>: cada vez que apretás "Actualizar" se guarda una foto del valor total. Hoy arranca casi vacía y se va enriqueciendo día a día. La línea dorada punteada es tu capital aportado a la fecha de cada foto.</p>
+        {history.length < 2 ? <div className="empty" style={{ padding: 30 }}>Apretá "Actualizar" en distintos días para ir registrando la serie. (Mientras tanto, mirá la curva de aportes de arriba.)</div> :
           <ResponsiveContainer width="100%" height={260}><AreaChart data={history}>
             <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#74ACDF" stopOpacity={.5} /><stop offset="100%" stopColor="#74ACDF" stopOpacity={0} /></linearGradient></defs>
             <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
@@ -825,34 +846,47 @@ function Evolucion({ rows, history, totals, base, money, refRate }) {
             <Area type="monotone" dataKey="valUSD" stroke="#74ACDF" strokeWidth={2} fill="url(#g1)" />
           </AreaChart></ResponsiveContainer>}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div className="panel" style={{ padding: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 2 }}>Composición por clase</div>
-          <p className="muted" style={{ fontSize: 10.5, marginBottom: 10, lineHeight: 1.4 }}>Suma de toda tu cartera, juntando los tres lugares: <strong className="cel">Balanz + Allaria + Nexo</strong>.</p>
-          <ResponsiveContainer width="100%" height={230}><PieChart>
-            <Pie data={byClass} dataKey="value" nameKey="name" innerRadius={55} outerRadius={88} paddingAngle={2}>{byClass.map((e, i) => <Cell key={i} fill={e.color} stroke="#0D1318" strokeWidth={2} />)}</Pie>
-            <Tooltip contentStyle={ttStyle} content={({ active, payload }) => {
-              if (!active || !payload || !payload.length) return null;
-              const p = payload[0].payload;
-              return (<div style={{ background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, padding: "8px 11px", fontSize: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: p.color }} /><span style={{ color: "#E7EEF4", fontWeight: 600 }}>{p.name}</span></div>
-                <div className="mono gold">{fmtUSD(p.value)}</div>
-                <div className="mono muted" style={{ fontSize: 11 }}>{((p.value / totals.valUSD) * 100).toFixed(1)}% de la cartera</div>
-              </div>);
-            }} /></PieChart></ResponsiveContainer>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>{byClass.map(e => <span key={e.name} className="chip" style={{ color: e.color, borderColor: e.color + "55" }}>{e.name} · {((e.value / totals.valUSD) * 100).toFixed(0)}%</span>)}</div>
+      <div className="panel" style={{ padding: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 2 }}>Composición por clase</div>
+        <p className="muted" style={{ fontSize: 11, marginBottom: 16, lineHeight: 1.4 }}>Suma de toda tu cartera, juntando los tres lugares: <strong className="cel">Balanz + Allaria + Nexo</strong>. El total está en el centro.</p>
+        <div style={{ display: "flex", gap: 28, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 360px", minWidth: 300, position: "relative" }}>
+            <ResponsiveContainer width="100%" height={340}><PieChart>
+              <Pie data={byClass} dataKey="value" nameKey="name" innerRadius={92} outerRadius={150} paddingAngle={2}>{byClass.map((e, i) => <Cell key={i} fill={e.color} stroke="#0D1318" strokeWidth={2} />)}</Pie>
+              <Tooltip content={({ active, payload }) => {
+                if (!active || !payload || !payload.length) return null;
+                const p = payload[0].payload;
+                return (<div style={{ background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, padding: "8px 11px", fontSize: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: p.color }} /><span style={{ color: "#E7EEF4", fontWeight: 600 }}>{p.name}</span></div>
+                  <div className="mono gold">{fmtUSD(p.value)}</div>
+                  <div className="mono muted" style={{ fontSize: 11 }}>{((p.value / totals.valUSD) * 100).toFixed(1)}% de la cartera</div>
+                </div>);
+              }} /></PieChart></ResponsiveContainer>
+            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+              <div className="eyebrow" style={{ fontSize: 9 }}>Total cartera</div>
+              <div className="kpi-num gold" style={{ fontSize: 24, marginTop: 3 }}>{fmtUSD(totals.valUSD)}</div>
+            </div>
+          </div>
+          <div style={{ flex: "1 1 260px", minWidth: 240, display: "grid", gap: 8 }}>
+            {byClass.slice().sort((a, b) => b.value - a.value).map(e => (
+              <div key={e.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 13px", background: "var(--surface2)", borderRadius: 9, border: "1px solid var(--line)" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: e.color, flexShrink: 0 }} /><span style={{ fontSize: 13 }}>{e.name}</span></span>
+                <span style={{ textAlign: "right", whiteSpace: "nowrap" }}><span className="mono gold" style={{ fontSize: 13 }}>{fmtUSD(e.value)}</span> <span className="mono muted" style={{ fontSize: 11 }}>· {((e.value / totals.valUSD) * 100).toFixed(1)}%</span></span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="panel" style={{ padding: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 4 }}>Top contribuidores al resultado · US$</div>
-          <p className="muted" style={{ fontSize: 11, marginBottom: 10 }}>Los que más mueven tu resultado (sin cripto ni efectivo). El <strong>color = clase</strong>, igual que la torta: ves de un vistazo qué tipo de activo te está dando la ganancia.</p>
-          <ResponsiveContainer width="100%" height={Math.max(220, pnlByAsset.length * 24)}><BarChart data={pnlByAsset} layout="vertical" margin={{ left: 6, right: 36 }}>
-            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" horizontal={false} />
-            <XAxis type="number" stroke="#5C6F7E" fontSize={11} tickFormatter={v => (v / 1000).toFixed(0) + "k"} />
-            <YAxis type="category" dataKey="name" stroke="#8597A6" fontSize={11} width={58} />
-            <Tooltip contentStyle={ttStyle} formatter={(v, n, p) => [(v >= 0 ? "+" : "") + fmtUSD(v) + "  ·  " + p.payload.cls, "Resultado"]} cursor={{ fill: "#1C2832" }} />
-            <Bar dataKey="pnl" radius={[0, 3, 3, 0]}>{pnlByAsset.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? e.color : "#E8604C"} />)}</Bar>
-          </BarChart></ResponsiveContainer>
-        </div>
+      </div>
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Top contribuidores al resultado · US$</div>
+        <p className="muted" style={{ fontSize: 11, marginBottom: 10 }}>Los que más mueven tu resultado (sin cripto ni efectivo). El <strong>color = clase</strong>, igual que la torta: ves de un vistazo qué tipo de activo te está dando la ganancia.</p>
+        <ResponsiveContainer width="100%" height={Math.max(220, pnlByAsset.length * 24)}><BarChart data={pnlByAsset} layout="vertical" margin={{ left: 6, right: 36 }}>
+          <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" horizontal={false} />
+          <XAxis type="number" stroke="#5C6F7E" fontSize={11} tickFormatter={v => (v / 1000).toFixed(0) + "k"} />
+          <YAxis type="category" dataKey="name" stroke="#8597A6" fontSize={11} width={58} />
+          <Tooltip contentStyle={ttStyle} formatter={(v, n, p) => [(v >= 0 ? "+" : "") + fmtUSD(v) + "  ·  " + p.payload.cls, "Resultado"]} cursor={{ fill: "#1C2832" }} />
+          <Bar dataKey="pnl" radius={[0, 3, 3, 0]}>{pnlByAsset.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? e.color : "#E8604C"} />)}</Bar>
+        </BarChart></ResponsiveContainer>
       </div>
       <div className="panel" style={{ padding: 20 }}>
         <div className="eyebrow" style={{ marginBottom: 4 }}>Distribución por broker / exchange</div>
@@ -870,7 +904,29 @@ const ttStyle = { background: "#0D1318", border: "1px solid #2A3946", borderRadi
 
 /* ============================== operaciones tab ============================== */
 function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate, ops, setOps }) {
-  const list = ops || [];
+  // Normaliza operaciones: consolida cripto en NEXO y completa el MEP faltante
+  // a partir de operaciones previas (mismo día -> monto/USD -> arrastre cronológico).
+  const list = useMemo(() => {
+    const valid = m => m && m > 200 && m < 5000;
+    const raw = (ops || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const dayMep = {};
+    raw.forEach(o => { if (valid(o.mep)) dayMep[o.date] = o.mep; });
+    let last = null;
+    const fwd = raw.map(o => {
+      let mep = valid(o.mep) ? o.mep : null, est = false;
+      if (!mep && o.montoARS && o.usd && valid(o.montoARS / o.usd)) mep = o.montoARS / o.usd;
+      if (!mep && dayMep[o.date]) mep = dayMep[o.date];
+      if (!mep) { mep = last; est = true; } else last = mep;
+      return { ...o, mep: mep ? round2(mep) : null, mepEst: est };
+    });
+    let next = null;
+    for (let i = fwd.length - 1; i >= 0; i--) { if (!fwd[i].mep) { fwd[i].mep = next; fwd[i].mepEst = true; } else next = fwd[i].mep; }
+    return fwd.map(o => ({
+      ...o,
+      broker: (o.broker === "SATOSHI" || o.broker === "LEMON") ? "NEXO" : o.broker,
+      usd: (o.usd != null && o.usd !== "") ? o.usd : (o.mep ? round2(o.montoARS / o.mep) : null),
+    })).sort((a, b) => b.date.localeCompare(a.date));
+  }, [ops]);
   const [op, setOp] = useState({ date: today(), broker: "BALANZ", ticker: "", cls: "CEDEAR", qty: "", price: "", currency: "ARS", mep: "" });
   const [msg, setMsg] = useState("");
   const [fy, setFy] = useState("todos"), [fm, setFm] = useState("todos"), [fa, setFa] = useState("todos"), [fb, setFb] = useState("todos");
@@ -940,6 +996,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           <div><div className="eyebrow">Operaciones</div><div className="kpi-num" style={{ fontSize: 22, marginTop: 4 }}>{filtered.length}</div></div>
           <div><div className="eyebrow">Invertido (USD)</div><div className="kpi-num gold" style={{ fontSize: 22, marginTop: 4 }}>{fmtUSD(sumUSD)}</div></div>
           <div><div className="eyebrow">Invertido (ARS)</div><div className="kpi-num cel" style={{ fontSize: 22, marginTop: 4 }}>{fmtARS(sumARS)}</div></div>
+          <div><div className="eyebrow">MEP prom. del período</div><div className="kpi-num" style={{ fontSize: 22, marginTop: 4, color: "var(--celeste)" }}>{sumUSD > 0 ? "$" + fmt(sumARS / sumUSD, 0) : "—"}</div></div>
         </div>
         {monthly.length > 0 && <ResponsiveContainer width="100%" height={180}><BarChart data={monthly}>
           <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
@@ -956,7 +1013,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
                   <td className="l">{o.broker}</td>
                   <td className="l" style={{ fontFamily: "var(--display)", fontWeight: 600 }}>{o.activo}</td>
                   <td className="mono">{fmt(o.montoARS, 0)}</td>
-                  <td className="mono muted">{o.mep ? fmt(o.mep, 0) : "—"}</td>
+                  <td className="mono muted" title={o.mepEst ? "MEP estimado a partir de operaciones cercanas" : "MEP de la operación"}>{o.mep ? (o.mepEst ? "~" : "") + fmt(o.mep, 0) : "—"}</td>
                   <td className="mono gold">{o.usd ? fmt(o.usd, 0) : "—"}</td>
                 </tr>
               ))}
@@ -964,6 +1021,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           </table>
         </div>
         {filtered.length === 0 && <div className="empty" style={{ padding: 20 }}>No hay operaciones con esos filtros.</div>}
+        <p className="muted" style={{ fontSize: 10.5, marginTop: 10, lineHeight: 1.45 }}>El <span className="mono">~</span> indica un MEP estimado a partir de operaciones cercanas (cuando el dato no venía en la operación). Las compras de cripto figuran consolidadas en <strong className="cel">NEXO</strong>.</p>
       </div>
 
       <div className="panel" style={{ padding: 20 }}>
