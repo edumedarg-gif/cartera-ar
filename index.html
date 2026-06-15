@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Cartera·AR — Cockpit de inversión</title>
+<style>html,body{margin:0;padding:0;background:#0D1318}#root{min-height:100vh}
+#boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#74ACDF;font-family:system-ui;font-size:14px;background:#0D1318;z-index:9999}</style>
+<script>
+window.storage = {
+  async get(k){ const v=localStorage.getItem(k); if(v===null) throw new Error("nf"); return {key:k,value:v}; },
+  async set(k,v){ localStorage.setItem(k,v); return {key:k,value:v}; },
+  async delete(k){ localStorage.removeItem(k); return {key:k,deleted:true}; },
+  async list(p){ return {keys:Object.keys(localStorage).filter(x=>!p||x.startsWith(p))}; }
+};
+window.__ANTHROPIC_KEY__ = localStorage.getItem('ANTHROPIC_KEY') || '';
+</script>
+<script type="importmap">
+{ "imports": {
+  "react": "https://esm.sh/react@18.3.1",
+  "react-dom": "https://esm.sh/react-dom@18.3.1",
+  "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+  "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+  "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
+  "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
+  "xlsx": "https://esm.sh/xlsx@0.18.5"
+} }
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="boot">Cargando tu cartera…</div>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import * as XLSX from "xlsx";
+import {
+  Wallet, TrendingUp, TrendingDown, RefreshCw, Plus, Trash2, X,
+  Brain, Newspaper, Upload, PiggyBank, LineChart as LineIcon, Layers,
+  AlertTriangle, Activity, Loader2, Pencil, ShieldCheck, Gauge, History, Coins, ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert,
+} from "lucide-react";
+
+/* ============================== design system ============================== */
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --ink:#0D1318; --surface:#151E26; --surface2:#1C2832; --line:#2A3946;
+  --text:#E7EEF4; --muted:#8597A6; --faint:#5C6F7E;
+  --celeste:#74ACDF; --gold:#CBA45E; --gain:#43C28A; --loss:#E8604C;
+  --display:'Space Grotesk',sans-serif; --body:'IBM Plex Sans',sans-serif; --mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box}
+.app{background:var(--ink);color:var(--text);font-family:var(--body);min-height:100vh;font-size:14px;letter-spacing:.01em}
+.app h1,.app h2,.app h3,.num{font-family:var(--display)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.btn{font-family:var(--body);font-weight:500;border-radius:10px;border:1px solid var(--line);background:var(--surface2);color:var(--text);padding:9px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:13px;transition:.15s}
+.btn:hover{border-color:var(--celeste);color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-accent{background:linear-gradient(180deg,#7FB6E6,#5E97CC);border-color:#5E97CC;color:#08151F;font-weight:600}
+.btn-accent:hover{filter:brightness(1.07);color:#08151F}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn-ghost:hover{color:#fff}
+.input,.sel{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:9px 11px;font-family:var(--body);font-size:13px;width:100%;outline:none}
+.input:focus,.sel:focus{border-color:var(--celeste)}
+.tabbar{display:flex;gap:4px;flex-wrap:wrap}
+.tab{font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:transparent;border:none;border-bottom:2px solid transparent;padding:11px 14px;cursor:pointer}
+.tab:hover{color:var(--text)}
+.tab.on{color:#fff;border-bottom-color:var(--celeste)}
+.gain{color:var(--gain)} .loss{color:var(--loss)} .gold{color:var(--gold)} .cel{color:var(--celeste)} .muted{color:var(--muted)}
+table{width:100%;border-collapse:collapse}
+th{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);text-align:right;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:500}
+th.l,td.l{text-align:left}
+td{padding:13px 12px;border-bottom:1px solid var(--line);font-size:13px}
+tr:hover td{background:#19232C}
+.chip{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:6px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.modal-bg{position:fixed;inset:0;background:rgba(6,10,13,.72);backdrop-filter:blur(3px);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.modal{width:100%;max-width:560px;animation:pop .18s ease}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.macro-rail{display:flex;gap:0;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.macro-cell{flex:1;min-width:118px;padding:12px 16px;border-right:1px solid var(--line)}
+.macro-cell:last-child{border-right:none}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.ai-out{white-space:pre-wrap;font-size:13.5px;line-height:1.62;color:var(--text)}
+.ai-out strong{color:var(--celeste)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.scrollx{overflow-x:auto}
+.kpi-num{font-family:var(--display);font-weight:600;line-height:1}
+.hide-money .kpi-num,.hide-money .mono{filter:blur(8px);transition:filter .15s;user-select:none}
+.hide-money .kpi-num:hover,.hide-money .mono:hover{filter:blur(8px)}
+.empty{text-align:center;padding:54px 20px;color:var(--muted)}
+.rate-card{flex:1;min-width:140px;padding:16px 18px;background:var(--surface2);border:1px solid var(--line);border-radius:12px}
+@media(max-width:640px){th,td{padding:9px 8px;font-size:12px}}
+`;
+
+/* ============================== reference data ============================== */
+const CLASSES = ["EFECTIVO","MERVAL","CEDEAR","BONO_CORP","BONO_NAC","FCI","ACCION_INT","ETF","CRYPTO"];
+const CLASS_LABEL = {EFECTIVO:"Efectivo / Dólares",MERVAL:"Acción MERVAL",CEDEAR:"CEDEAR",BONO_CORP:"Bono Corporativo",BONO_NAC:"Bono Soberano",FCI:"FCI",ACCION_INT:"Acción Internacional",ETF:"ETF",CRYPTO:"Cripto"};
+const CLASS_COLOR = {EFECTIVO:"#8FB996",MERVAL:"#74ACDF",CEDEAR:"#CBA45E",BONO_CORP:"#9C8CE0",BONO_NAC:"#5BC0BE",FCI:"#E0A458",ACCION_INT:"#E8849C",ETF:"#6FB1C9",CRYPTO:"#43C28A"};
+/* riesgo 0-100 por clase (bonos soberanos AR = riesgo alto pese a ser "bono") */
+const CLASS_RISK = {EFECTIVO:5,FCI:15,BONO_CORP:42,BONO_NAC:55,CEDEAR:60,ETF:55,ACCION_INT:62,MERVAL:72,CRYPTO:95};
+const BROKERS = ["ALLARIA","BALANZ","NEXO","SATOSHI","LEMON","OTRO"];
+const CRYPTO_IDS = {BTC:"bitcoin",ETH:"ethereum",USDT:"tether",USDC:"usd-coin",DAI:"dai",BNB:"binancecoin",SOL:"solana",ADA:"cardano",XRP:"ripple",DOGE:"dogecoin",MATIC:"matic-network",DOT:"polkadot",LTC:"litecoin",AVAX:"avalanche-2",LINK:"chainlink",NEXO:"nexo"};
+
+const fmt = (n, dec = 2) => (n == null || isNaN(n)) ? "—" : n.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const fmtUSD = (n) => "US$ " + fmt(n);
+const fmtARS = (n) => "$ " + fmt(n, 0);
+const fmtPct = (n) => (n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + fmt(n) + "%");
+const uid = () => Math.random().toString(36).slice(2, 9);
+const today = () => new Date().toISOString().slice(0, 10);
+
+async function storeGet(key, def) { try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : def; } catch { return def; } }
+async function storeSet(key, val) { try { await window.storage.set(key, JSON.stringify(val)); } catch { /* */ } }
+
+/* ============================== real seed (from INVERSION.xlsx, 2024-2026) ============================== */
+const SEED_HOLDINGS = [{"ticker": "YPFD", "name": "YPF clase D", "cls": "MERVAL", "broker": "BALANZ", "currency": "ARS", "qty": 59, "manualPrice": 83400, "investedUSD": 650.47, "investedARS": 46521.5, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "974889"}, {"ticker": "BYMA", "name": "BYMA", "cls": "MERVAL", "broker": "BALANZ", "currency": "ARS", "qty": 11717, "manualPrice": 304.75, "investedUSD": 1423.32, "investedARS": 1548168.75, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "436857"}, {"ticker": "AL30", "name": "Bonar 2030", "cls": "BONO_NAC", "broker": "BALANZ", "currency": "ARS", "qty": 27285, "manualPrice": 936.5, "investedUSD": 11491.22, "investedARS": 11481438.05, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "973054"}, {"ticker": "GD30", "name": "Global 2030", "cls": "BONO_NAC", "broker": "BALANZ", "currency": "ARS", "qty": 15817, "manualPrice": 957.0, "investedUSD": 10550.43, "investedARS": 12746306.6, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "658768"}, {"ticker": "GD41", "name": "Global 2041", "cls": "BONO_NAC", "broker": "BALANZ", "currency": "ARS", "qty": 2989, "manualPrice": 1134.0, "investedUSD": 1943.79, "investedARS": 2371447.9, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "456999"}, {"ticker": "BRKB", "name": "Berkshire B (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 174, "manualPrice": 33220, "investedUSD": 2963.48, "investedARS": 2065511.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "828071"}, {"ticker": "CVX", "name": "Chevron (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 233, "manualPrice": 17450, "investedUSD": 2533.63, "investedARS": 1853874.5, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "103664"}, {"ticker": "GOOGL", "name": "Alphabet (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 1507, "manualPrice": 9290, "investedUSD": 3857.97, "investedARS": 3205848.5, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "908624"}, {"ticker": "KO", "name": "Coca-Cola (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 234, "manualPrice": 24610, "investedUSD": 3123.02, "investedARS": 2491674.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "707361"}, {"ticker": "MELI", "name": "Mercado Libre (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 264, "manualPrice": 19860, "investedUSD": 3376.48, "investedARS": 2748566.5, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "254777"}, {"ticker": "NVDA", "name": "Nvidia (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 307, "manualPrice": 12780, "investedUSD": 2322.5, "investedARS": 3261670.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "289155"}, {"ticker": "SPY", "name": "S&P 500 (CEDEAR ETF)", "cls": "ETF", "broker": "BALANZ", "currency": "ARS", "qty": 982, "manualPrice": 18520, "investedUSD": 8534.13, "investedARS": 7853280.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "885091"}, {"ticker": "XLF", "name": "Financials (CEDEAR ETF)", "cls": "ETF", "broker": "BALANZ", "currency": "ARS", "qty": 187, "manualPrice": 39960, "investedUSD": 3786.62, "investedARS": 3212816.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "605234"}, {"ticker": "IRCPO", "name": "ON IRSA 8% 2035", "cls": "BONO_CORP", "broker": "BALANZ", "currency": "ARS", "qty": 4418, "manualPrice": 1590.9, "investedUSD": 4220.44, "investedARS": 5747818.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "958715"}, {"ticker": "MTCGO", "name": "ON Mastellone 10.95% 2026", "cls": "BONO_CORP", "broker": "BALANZ", "currency": "ARS", "qty": 1, "manualPrice": 1527.5, "investedUSD": 1.06, "investedARS": 299.5, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "999887"}, {"ticker": "BCMMA", "name": "Balanz Money Market $ (FCI)", "cls": "FCI", "broker": "BALANZ", "currency": "ARS", "qty": 212384.34, "manualPrice": 11.94, "investedUSD": 1650.86, "investedARS": 1951924.88, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "878116"}, {"ticker": "TSLA", "name": "Tesla (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 15, "manualPrice": 406.43, "investedUSD": 4.22, "investedARS": 6096.45, "costEstimated": true, "firstDate": "2024-01-01", "coingeckoId": "", "id": "200210"}, {"ticker": "AMZN", "name": "Amazon (CEDEAR)", "cls": "CEDEAR", "broker": "BALANZ", "currency": "ARS", "qty": 20, "manualPrice": 238.55, "investedUSD": 3.3, "investedARS": 4771.0, "costEstimated": true, "firstDate": "2024-01-01", "coingeckoId": "", "id": "502601"}, {"ticker": "BCMMUSDA", "name": "Balanz MM USD (FCI)", "cls": "FCI", "broker": "BALANZ", "currency": "USD", "qty": 1999.73, "manualPrice": 1.02, "investedUSD": 2000.0, "investedARS": 2477100.0, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "854775"}, {"ticker": "BAHUSDA", "name": "Balanz Corp USD (FCI)", "cls": "FCI", "broker": "BALANZ", "currency": "USD", "qty": 5863.85, "manualPrice": 1.42, "investedUSD": 7183.72, "investedARS": 7464916.28, "costEstimated": false, "firstDate": "2026-06-14", "coingeckoId": "", "id": "467555"}, {"ticker": "USD-BAL", "name": "Dólares en Balanz", "cls": "FCI", "broker": "BALANZ", "currency": "USD", "qty": 15031.84, "manualPrice": 1.0, "investedUSD": 15031.84, "investedARS": 21732132.36, "costEstimated": false, "firstDate": "2025-01-01", "coingeckoId": "", "isCash": true, "id": "226062"}, {"ticker": "BAL-OTROS", "name": "Balanz · saldo no detallado (concilia c/ resumen)", "cls": "FCI", "broker": "BALANZ", "currency": "USD", "qty": 10846.41, "manualPrice": 1.0, "investedUSD": 10846.41, "investedARS": 15681088.79, "costEstimated": true, "firstDate": "2023-01-01", "coingeckoId": "", "id": "699524"}, {"ticker": "CEPU", "name": "Central Puerto", "cls": "MERVAL", "broker": "ALLARIA", "currency": "USD", "qty": 423, "manualPrice": 1.6639, "investedUSD": 556.27, "investedARS": 804221.79, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "314402"}, {"ticker": "PAMP", "name": "Pampa Energía", "cls": "MERVAL", "broker": "ALLARIA", "currency": "USD", "qty": 1087, "manualPrice": 3.6369, "investedUSD": 3375.87, "investedARS": 4880630.29, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "822163"}, {"ticker": "ECOG", "name": "Ecogas Inv.", "cls": "MERVAL", "broker": "ALLARIA", "currency": "USD", "qty": 22, "manualPrice": 2.3032, "investedUSD": 22.73, "investedARS": 32861.67, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "584978"}, {"ticker": "TRAN", "name": "Transener", "cls": "MERVAL", "broker": "ALLARIA", "currency": "USD", "qty": 952, "manualPrice": 2.8432, "investedUSD": 2158.27, "investedARS": 3120297.27, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "938383"}, {"ticker": "MSFT", "name": "Microsoft (CEDEAR)", "cls": "CEDEAR", "broker": "ALLARIA", "currency": "USD", "qty": 19, "manualPrice": 15.3684, "investedUSD": 292.25, "investedARS": 422517.52, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "980847"}, {"ticker": "NVDA-A", "name": "Nvidia (CEDEAR Allaria)", "cls": "CEDEAR", "broker": "ALLARIA", "currency": "USD", "qty": 230, "manualPrice": 9.3337, "investedUSD": 1299.91, "investedARS": 1879331.88, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "423414"}, {"ticker": "AAPL", "name": "Apple (CEDEAR)", "cls": "CEDEAR", "broker": "ALLARIA", "currency": "USD", "qty": 640, "manualPrice": 15.308, "investedUSD": 6414.85, "investedARS": 9274205.24, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "733388"}, {"ticker": "GD38", "name": "Global 2038", "cls": "BONO_NAC", "broker": "ALLARIA", "currency": "USD", "qty": 4, "manualPrice": 0.855, "investedUSD": 2.96, "investedARS": 4279.39, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "324199"}, {"ticker": "GD35", "name": "Global 2035", "cls": "BONO_NAC", "broker": "ALLARIA", "currency": "USD", "qty": 39, "manualPrice": 0.8164, "investedUSD": 27.08, "investedARS": 39150.64, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "937911"}, {"ticker": "GD30-A", "name": "Global 2030 (Allaria)", "cls": "BONO_NAC", "broker": "ALLARIA", "currency": "USD", "qty": 5, "manualPrice": 0.654, "investedUSD": 2.86, "investedARS": 4134.82, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "977458"}, {"ticker": "BPOC7", "name": "Bopreal S1-C 2027", "cls": "BONO_NAC", "broker": "ALLARIA", "currency": "USD", "qty": 3, "manualPrice": 1.0067, "investedUSD": 2.85, "investedARS": 4120.36, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "776697"}, {"ticker": "BPOD7", "name": "Bopreal S1-D 2027", "cls": "BONO_NAC", "broker": "ALLARIA", "currency": "USD", "qty": 3, "manualPrice": 1.0067, "investedUSD": 2.86, "investedARS": 4134.82, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "869147"}, {"ticker": "GD41-A", "name": "Global 2041 (Allaria)", "cls": "BONO_NAC", "broker": "ALLARIA", "currency": "USD", "qty": 11, "manualPrice": 0.7591, "investedUSD": 7.05, "investedARS": 10192.47, "costEstimated": false, "firstDate": "2023-01-01", "coingeckoId": "", "id": "761008"}, {"ticker": "USD-ALL", "name": "Efectivo Allaria", "cls": "FCI", "broker": "ALLARIA", "currency": "USD", "qty": 372.47, "manualPrice": 1.0, "investedUSD": 372.47, "investedARS": 538494.78, "costEstimated": false, "firstDate": "2025-01-01", "coingeckoId": "", "isCash": true, "id": "920961"}, {"ticker": "BTC", "name": "Bitcoin", "cls": "CRYPTO", "broker": "NEXO", "currency": "USD", "qty": 0.24216956, "manualPrice": 108000, "investedUSD": 19062.86, "investedARS": 27559939.22, "costEstimated": false, "firstDate": "2022-07-29", "coingeckoId": "bitcoin", "id": "816825"}, {"ticker": "ETH", "name": "Ethereum", "cls": "CRYPTO", "broker": "NEXO", "currency": "USD", "qty": 0.05946041, "manualPrice": 3000, "investedUSD": 150.31, "investedARS": 217309.18, "costEstimated": false, "firstDate": "2022-05-03", "coingeckoId": "ethereum", "id": "958206"}, {"ticker": "NEXO", "name": "NEXO Token (interés)", "cls": "CRYPTO", "broker": "NEXO", "currency": "USD", "qty": 168.29477815, "manualPrice": 1.2, "investedUSD": 0.0, "investedARS": 0.0, "costEstimated": false, "firstDate": "2025-10-22", "coingeckoId": "nexo", "id": "550545"}].map(h => ({ ...h, id: uid(), liveAt: null }));
+const SEED_APORTES = [{"date": "2024-01-15", "amount": 566.62, "currency": "USD"}, {"date": "2024-02-15", "amount": 844.01, "currency": "USD"}, {"date": "2024-03-15", "amount": 1849.35, "currency": "USD"}, {"date": "2024-04-15", "amount": 1887.93, "currency": "USD"}, {"date": "2024-05-15", "amount": 1253.88, "currency": "USD"}, {"date": "2024-06-15", "amount": 1681.61, "currency": "USD"}, {"date": "2024-07-15", "amount": 1948.87, "currency": "USD"}, {"date": "2024-08-15", "amount": 1288.75, "currency": "USD"}, {"date": "2024-09-15", "amount": 959.38, "currency": "USD"}, {"date": "2024-10-15", "amount": 4232.57, "currency": "USD"}, {"date": "2024-11-15", "amount": 2973.24, "currency": "USD"}, {"date": "2024-12-15", "amount": 2117.22, "currency": "USD"}, {"date": "2025-01-15", "amount": 2419.52, "currency": "USD"}, {"date": "2025-02-15", "amount": 3020.1, "currency": "USD"}, {"date": "2025-03-15", "amount": 5232.42, "currency": "USD"}, {"date": "2025-04-15", "amount": 3681.89, "currency": "USD"}, {"date": "2025-05-15", "amount": 2556.77, "currency": "USD"}, {"date": "2025-06-15", "amount": 3514.86, "currency": "USD"}, {"date": "2025-07-15", "amount": 5057.32, "currency": "USD"}, {"date": "2025-08-15", "amount": 4422.65, "currency": "USD"}, {"date": "2025-09-15", "amount": 4234.73, "currency": "USD"}, {"date": "2025-10-15", "amount": 4630.43, "currency": "USD"}, {"date": "2025-11-15", "amount": 4559.45, "currency": "USD"}, {"date": "2025-12-15", "amount": 2499.48, "currency": "USD"}, {"date": "2026-01-15", "amount": 948.29, "currency": "USD"}, {"date": "2026-02-15", "amount": 1414.17, "currency": "USD"}, {"date": "2026-03-15", "amount": 2614.39, "currency": "USD"}, {"date": "2026-04-15", "amount": 1813.75, "currency": "USD"}, {"date": "2026-05-15", "amount": 1776.1, "currency": "USD"}, {"date": "2026-06-15", "amount": 2128.41, "currency": "USD"}].map(a => ({ ...a, id: uid() }));
+
+/* ===== Resultado histórico oficial Balanz (página Evolución Histórica, 02/01/2017–14/06/2026, USD) ===== */
+const BAL_HIST = {
+  valorFinal: 123796.74, desde: "02/01/2017",
+  depositos: 83727.47, extracciones: -8381.00, transfRecibidos: 14044.11, transfEnviados: -20732.19,
+  tenencia: 50685.45, dividendos: 1157.70, cupones: 4353.03, gastos: -1188.46, ajustes: 130.63,
+  montoOperado: 140027.91, tradingNeto: -347,
+};
+
+/* ===== Acumulación de tenencia cripto en Nexo (nominales por mes) ===== */
+const NEXO_ACCUM = {"BTC":[{"date":"2022-04","qty":0.0},{"date":"2022-05","qty":0.0},{"date":"2022-06","qty":0.0},{"date":"2022-07","qty":0.00597196},{"date":"2022-08","qty":0.00598684},{"date":"2022-09","qty":0.00600124},{"date":"2022-10","qty":0.00601612},{"date":"2022-11","qty":0.00603052},{"date":"2022-12","qty":0.0060454},{"date":"2023-01","qty":0.00606051},{"date":"2023-02","qty":0.00607423},{"date":"2023-03","qty":0.00608942},{"date":"2023-04","qty":0.00610412},{"date":"2023-05","qty":0.00611931},{"date":"2023-06","qty":0.00613401},{"date":"2023-07","qty":0.0061492},{"date":"2023-08","qty":0.00616439},{"date":"2023-09","qty":0.00617924},{"date":"2023-10","qty":0.00619474},{"date":"2023-11","qty":0.00620974},{"date":"2023-12","qty":0.00622524},{"date":"2024-01","qty":0.00624074},{"date":"2024-02","qty":0.00625524},{"date":"2024-03","qty":0.00627074},{"date":"2024-04","qty":0.00628574},{"date":"2024-05","qty":0.00630136},{"date":"2024-06","qty":0.00631666},{"date":"2024-07","qty":0.00633247},{"date":"2024-08","qty":0.00634828},{"date":"2024-09","qty":0.00636358},{"date":"2024-10","qty":0.00637939},{"date":"2024-11","qty":0.00639469},{"date":"2024-12","qty":0.0064105},{"date":"2025-01","qty":0.00642645},{"date":"2025-02","qty":0.00643789},{"date":"2025-10","qty":0.01880075},{"date":"2025-11","qty":0.06158845},{"date":"2025-12","qty":0.09096722},{"date":"2026-01","qty":0.14730163},{"date":"2026-02","qty":0.16279429},{"date":"2026-03","qty":0.19479519},{"date":"2026-04","qty":0.19506347},{"date":"2026-05","qty":0.22227283},{"date":"2026-06","qty":0.24216956}],"ETH":[{"date":"2022-04","qty":0.0},{"date":"2022-05","qty":0.05314823},{"date":"2022-06","qty":0.05331968},{"date":"2022-07","qty":0.05349744},{"date":"2022-08","qty":0.0536758},{"date":"2022-09","qty":0.05384896},{"date":"2022-10","qty":0.05402848},{"date":"2022-11","qty":0.05420278},{"date":"2022-12","qty":0.05438348},{"date":"2023-01","qty":0.05456478},{"date":"2023-02","qty":0.05472905},{"date":"2023-03","qty":0.05491151},{"date":"2023-04","qty":0.05508866},{"date":"2023-05","qty":0.05527233},{"date":"2023-06","qty":0.05545065},{"date":"2023-07","qty":0.05563552},{"date":"2023-08","qty":0.05582101},{"date":"2023-09","qty":0.05600111},{"date":"2023-10","qty":0.05618782},{"date":"2023-11","qty":0.0563691},{"date":"2023-12","qty":0.05655704},{"date":"2024-01","qty":0.0567456},{"date":"2024-02","qty":0.05692258},{"date":"2024-03","qty":0.05711236},{"date":"2024-04","qty":0.05729663},{"date":"2024-05","qty":0.05748767},{"date":"2024-06","qty":0.05767315},{"date":"2024-07","qty":0.05786543},{"date":"2024-08","qty":0.05805836},{"date":"2024-09","qty":0.05824569},{"date":"2024-10","qty":0.05843989},{"date":"2024-11","qty":0.05862845},{"date":"2024-12","qty":0.05882394},{"date":"2025-01","qty":0.05902008},{"date":"2025-02","qty":0.05915967},{"date":"2025-10","qty":0.05915967},{"date":"2025-11","qty":0.05915967},{"date":"2025-12","qty":0.05915967},{"date":"2026-01","qty":0.05915967},{"date":"2026-02","qty":0.05915967},{"date":"2026-03","qty":0.05917723},{"date":"2026-04","qty":0.05929773},{"date":"2026-05","qty":0.05940973},{"date":"2026-06","qty":0.05946041}],"NEXO":[{"date":"2022-04","qty":0.0},{"date":"2022-05","qty":0.0},{"date":"2022-06","qty":0.0},{"date":"2022-07","qty":0.0},{"date":"2022-08","qty":0.0},{"date":"2022-09","qty":0.0},{"date":"2022-10","qty":0.0},{"date":"2022-11","qty":0.0},{"date":"2022-12","qty":0.0},{"date":"2023-01","qty":0.0},{"date":"2023-02","qty":0.0},{"date":"2023-03","qty":0.0},{"date":"2023-04","qty":0.0},{"date":"2023-05","qty":0.0},{"date":"2023-06","qty":0.0},{"date":"2023-07","qty":0.0},{"date":"2023-08","qty":0.0},{"date":"2023-09","qty":0.0},{"date":"2023-10","qty":0.0},{"date":"2023-11","qty":0.0},{"date":"2023-12","qty":0.0},{"date":"2024-01","qty":0.0},{"date":"2024-02","qty":0.0},{"date":"2024-03","qty":0.0},{"date":"2024-04","qty":0.0},{"date":"2024-05","qty":0.0},{"date":"2024-06","qty":0.0},{"date":"2024-07","qty":0.0},{"date":"2024-08","qty":0.0},{"date":"2024-09","qty":0.0},{"date":"2024-10","qty":0.0},{"date":"2024-11","qty":0.0},{"date":"2024-12","qty":0.0},{"date":"2025-01","qty":0.0},{"date":"2025-02","qty":0.0},{"date":"2025-10","qty":8.87785315},{"date":"2025-11","qty":40.97472322},{"date":"2025-12","qty":76.55650262},{"date":"2026-01","qty":118.15090928},{"date":"2026-02","qty":141.03394506},{"date":"2026-03","qty":167.27570124},{"date":"2026-04","qty":167.6825894},{"date":"2026-05","qty":168.10408029},{"date":"2026-06","qty":168.29477815}]};
+
+/* ============================== app ============================== */
+function App() {
+  const [tab, setTab] = useState("cartera");
+  const [holdings, setHoldings] = useState(null);
+  const [aportes, setAportes] = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [macro, setMacro] = useState({ dolares: null, riesgo: null, updated: null });
+  const [loadingMacro, setLoadingMacro] = useState(false);
+  const [macroDetail, setMacroDetail] = useState(null);
+  const [hide, setHide] = useState(false);
+  const loaded = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      const hs = await storeGet("inv6_holdings", SEED_HOLDINGS);
+      setHoldings(hs.map(h => (h.isCash || h.ticker === "USD-BAL" || h.ticker === "USD-ALL") ? { ...h, cls: "EFECTIVO" } : h));
+      setAportes(await storeGet("inv6_aportes", SEED_APORTES));
+      setSettings(await storeGet("inv6_settings", { refDolar: "bolsa", baseCur: "USD", returns: { MERVAL: 18, CEDEAR: 12, BONO_CORP: 9, BONO_NAC: 11, FCI: 8, ACCION_INT: 10, ETF: 9, CRYPTO: 25 }, monthlyAporteUSD: 2000 }));
+      setHistory(await storeGet("inv6_history", []));
+      loaded.current = true;
+    })();
+  }, []);
+  useEffect(() => { if (loaded.current && holdings) storeSet("inv6_holdings", holdings); }, [holdings]);
+  useEffect(() => { if (loaded.current && aportes) storeSet("inv6_aportes", aportes); }, [aportes]);
+  useEffect(() => { if (loaded.current && settings) storeSet("inv6_settings", settings); }, [settings]);
+  useEffect(() => { if (loaded.current) storeSet("inv6_history", history); }, [history]);
+
+  const refreshMacro = useCallback(async () => {
+    setLoadingMacro(true);
+    try {
+      const [dRes, rRes] = await Promise.allSettled([
+        fetch("https://dolarapi.com/v1/dolares").then(r => r.json()),
+        fetch("https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais/ultimo").then(r => r.json()),
+      ]);
+      let dolares = null, riesgo = null;
+      if (dRes.status === "fulfilled" && Array.isArray(dRes.value)) { dolares = {}; dRes.value.forEach(d => { dolares[d.casa] = d; }); }
+      if (rRes.status === "fulfilled" && rRes.value?.valor) riesgo = rRes.value;
+      setMacro(m => ({ dolares: dolares || m.dolares, riesgo: riesgo || m.riesgo, updated: new Date() }));
+
+      // precios de acciones/bonos/CEDEARs en vivo (vía proxy /api/prices, solo funciona desplegado)
+      try {
+        const pr = await fetch("/api/prices").then(r => r.ok ? r.json() : null);
+        if (pr && typeof pr === "object" && Object.keys(pr).length) {
+          setHoldings(hs => hs.map(h => {
+            if (h.currency !== "ARS" || h.cls === "EFECTIVO" || h.cls === "FCI" || h.cls === "CRYPTO") return h;
+            const key = (h.ticker || "").toUpperCase().replace(/-A$/, "");
+            const px = pr[key];
+            return (px && +px > 0) ? { ...h, manualPrice: +px, liveAt: new Date().toISOString() } : h;
+          }));
+        }
+      } catch { /* sin proxy (modo local): se mantienen los precios manuales */ }
+
+      if (holdings) {
+        const ids = [...new Set(holdings.filter(h => h.cls === "CRYPTO").map(h => h.coingeckoId || CRYPTO_IDS[h.ticker?.toUpperCase()]).filter(Boolean))];
+        if (ids.length) {
+          try {
+            const cg = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`).then(r => r.json());
+            setHoldings(hs => hs.map(h => {
+              if (h.cls !== "CRYPTO") return h;
+              const id = h.coingeckoId || CRYPTO_IDS[h.ticker?.toUpperCase()];
+              return cg[id]?.usd ? { ...h, manualPrice: cg[id].usd, liveAt: new Date().toISOString() } : h;
+            }));
+          } catch { /* */ }
+        }
+      }
+    } finally { setLoadingMacro(false); }
+  }, [holdings]);
+  useEffect(() => { if (loaded.current) refreshMacro(); /* eslint-disable-next-line */ }, [loaded.current]);
+
+  const refRate = useMemo(() => { const d = macro.dolares?.[settings?.refDolar || "bolsa"]; return d ? (d.venta || d.compra) : null; }, [macro, settings]);
+  const base = settings?.baseCur || "USD";
+  const money = useCallback((usd, ars) => base === "ARS" ? fmtARS(ars) : fmtUSD(usd), [base]);
+
+  const calc = useCallback((h) => {
+    const qty = +h.qty || 0, price = +h.manualPrice || 0;
+    const valNative = price * qty;
+    const r = refRate || 1;
+    const costUSD = +h.investedUSD || 0, costARS = +h.investedARS || 0;
+    let valUSD, valARS;
+    if (h.currency === "USD") { valUSD = valNative; valARS = valNative * r; }
+    else { valARS = valNative; valUSD = valNative / r; }
+    return { qty, price, valUSD, valARS, costUSD, costARS,
+      avgNative: h.currency === "USD" ? (qty ? costUSD / qty : 0) : (qty ? costARS / qty : 0),
+      pnlUSD: valUSD - costUSD, pnlARS: valARS - costARS,
+      pnlPctUSD: costUSD ? (valUSD / costUSD - 1) * 100 : 0,
+      pnlPctARS: costARS ? (valARS / costARS - 1) * 100 : 0 };
+  }, [refRate]);
+
+  const rows = useMemo(() => (holdings || []).map(h => ({ ...h, m: calc(h) })), [holdings, calc]);
+  const totals = useMemo(() => rows.reduce((t, r) => ({
+    valUSD: t.valUSD + r.m.valUSD, valARS: t.valARS + r.m.valARS, costUSD: t.costUSD + r.m.costUSD, costARS: t.costARS + r.m.costARS,
+  }), { valUSD: 0, valARS: 0, costUSD: 0, costARS: 0 }), [rows]);
+  const pnlUSD = totals.valUSD - totals.costUSD;
+  const pnlPct = totals.costUSD ? (pnlUSD / totals.costUSD) * 100 : 0;
+  const aportesUSD = useMemo(() => (aportes || []).reduce((s, a) => s + (a.currency === "USD" ? +a.amount : (+a.amount) / (refRate || 1)), 0), [aportes, refRate]);
+
+  /* ---- earning rate (per day/week/month/year) — EXCLUYE CRIPTO (depende del ciclo) ---- */
+  const rate = useMemo(() => {
+    const nc = rows.filter(r => r.cls !== "CRYPTO");
+    const cost = nc.reduce((s, r) => s + r.m.costUSD, 0);
+    const valv = nc.reduce((s, r) => s + r.m.valUSD, 0);
+    const pnl = valv - cost;
+    if (!nc.length || !cost) return null;
+    const firstMs = Math.min(...nc.map(r => new Date(r.firstDate || "2024-01-01").getTime()));
+    const days = Math.max(1, (Date.now() - firstMs) / 86400000);
+    const wFirst = nc.reduce((s, r) => s + r.m.costUSD * new Date(r.firstDate || "2024-01-01").getTime(), 0) / cost;
+    const T = Math.max(0.2, (Date.now() - wFirst) / (86400000 * 365.25));
+    const ann = Math.pow(1 + pnl / cost, 1 / T) - 1;
+    const perDay = pnl / days;
+    const runDay = valv * (Math.pow(1 + ann, 1 / 365.25) - 1);
+    return { days, T, ann: ann * 100, firstMs, pnl, val: valv,
+      avg: { d: perDay, w: perDay * 7, m: perDay * 30.44, y: perDay * 365.25 },
+      run: { d: runDay, w: runDay * 7, m: runDay * 30.44, y: runDay * 365.25 } };
+  }, [rows]);
+
+  /* ---- rendimiento anualizado real por clase (sin cripto) para proyecciones ---- */
+  const classStats = useMemo(() => {
+    const m = {};
+    rows.filter(r => r.cls !== "CRYPTO").forEach(r => {
+      const g = m[r.cls] = m[r.cls] || { value: 0, cost: 0, wDate: 0 };
+      g.value += r.m.valUSD; g.cost += r.m.costUSD; g.wDate += r.m.costUSD * new Date(r.firstDate || "2024-01-01").getTime();
+    });
+    Object.values(m).forEach(g => {
+      const T = Math.max(0.2, (Date.now() - g.wDate / (g.cost || 1)) / (86400000 * 365.25));
+      g.ann = g.cost ? (Math.pow(g.value / g.cost, 1 / T) - 1) * 100 : 0;
+    });
+    return m;
+  }, [rows]);
+
+  const snapshot = useCallback(() => {
+    if (!totals.valUSD) return;
+    setHistory(h => { const d = today(); return [...h.filter(x => x.date !== d), { date: d, valUSD: totals.valUSD, valARS: totals.valARS, aportesUSD }].sort((a, b) => a.date.localeCompare(b.date)); });
+  }, [totals, aportesUSD]);
+
+  if (!holdings) return <div className="app" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}><Loader2 className="spin" /></div>;
+
+  return (
+    <div className={"app" + (hide ? " hide-money" : "")}>
+      <style>{CSS}</style>
+      <Header macro={macro} settings={settings} setSettings={setSettings} refRate={refRate} loading={loadingMacro}
+        onRefresh={() => { refreshMacro(); setTimeout(snapshot, 1500); }} onMacro={setMacroDetail} hide={hide} setHide={setHide} />
+      {macroDetail && <MacroModal item={macroDetail} onClose={() => setMacroDetail(null)} />}
+      <div className="wrap" style={{ paddingTop: 22, paddingBottom: 60 }}>
+        <Hero totals={totals} pnlUSD={pnlUSD} pnlPct={pnlPct} aportesUSD={aportesUSD} count={rows.length} rate={rate} base={base} money={money} refRate={refRate} />
+
+        <div className="tabbar" style={{ margin: "24px 0 18px", borderBottom: "1px solid var(--line)" }}>
+          {[["cartera", "Cartera", Wallet], ["ritmo", "Ritmo de ganancia", Gauge], ["evolucion", "Evolución", LineIcon],
+            ["aportes", "Aportes", PiggyBank], ["proyeccion", "Proyecciones", TrendingUp], ["historico", "Histórico", History], ["ia", "Inteligencia", Brain]].map(([k, l, Ic]) => (
+            <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}><Ic size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{l}</button>
+          ))}
+        </div>
+
+        {tab === "cartera" && <Cartera rows={rows} setHoldings={setHoldings} base={base} money={money} refRate={refRate} />}
+        {tab === "ritmo" && <Ritmo rate={rate} totals={totals} pnlUSD={pnlUSD} refRate={refRate} />}
+        {tab === "evolucion" && <Evolucion rows={rows} history={history} totals={totals} base={base} money={money} refRate={refRate} />}
+        {tab === "aportes" && <Aportes aportes={aportes} setAportes={setAportes} aportesUSD={aportesUSD} valUSD={totals.valUSD} setHoldings={setHoldings} refRate={refRate} />}
+        {tab === "proyeccion" && <Proyeccion rows={rows} settings={settings} setSettings={setSettings} classStats={classStats} />}
+        {tab === "historico" && <Historico />}
+        {tab === "ia" && <IA rows={rows} totals={totals} macro={macro} pnlPct={pnlPct} />}
+        <Disclaimer />
+      </div>
+    </div>
+  );
+}
+
+/* ============================== header ============================== */
+function Header({ macro, settings, setSettings, refRate, loading, onRefresh, onMacro, hide, setHide }) {
+  const d = macro.dolares;
+  const cell = (label, val, sub, key) => (
+    <div className="macro-cell" onClick={key ? () => onMacro({ key, label }) : undefined}
+      style={key ? { cursor: "pointer" } : undefined} title={key ? "Ver histórico" : undefined}>
+      <div className="eyebrow">{label}</div>
+      <div className="mono" style={{ fontSize: 17, fontWeight: 600, marginTop: 3 }}>{val}</div>
+      {sub && <div className="muted" style={{ fontSize: 10, marginTop: 1 }}>{sub}</div>}</div>
+  );
+  return (
+    <div style={{ borderBottom: "1px solid var(--line)", background: "linear-gradient(180deg,#0F171E,#0D1318)" }}>
+      <div className="wrap" style={{ paddingTop: 18, paddingBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 9, background: "linear-gradient(135deg,#74ACDF,#CBA45E)", display: "flex", alignItems: "center", justifyContent: "center" }}><Activity size={18} color="#0D1318" /></div>
+            <div><div style={{ fontFamily: "var(--display)", fontWeight: 600, fontSize: 17, lineHeight: 1 }}>Cartera<span className="cel">·</span>AR</div>
+              <div className="eyebrow" style={{ marginTop: 3 }}>Cockpit privado de inversión</div></div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn" onClick={() => setHide(h => !h)} title={hide ? "Mostrar saldos" : "Ocultar saldos"} style={{ padding: "8px 10px" }}>
+              {hide ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+            <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 9, overflow: "hidden" }}>
+              {["USD", "ARS"].map(c => (
+                <button key={c} onClick={() => setSettings(s => ({ ...s, baseCur: c }))}
+                  style={{ padding: "8px 13px", fontFamily: "var(--mono)", fontSize: 12, cursor: "pointer", border: "none",
+                    background: (settings.baseCur || "USD") === c ? "var(--celeste)" : "transparent",
+                    color: (settings.baseCur || "USD") === c ? "#08151F" : "var(--muted)", fontWeight: 600 }}>
+                  {c === "USD" ? "US$" : "AR$"}
+                </button>
+              ))}
+            </div>
+            <select className="sel" style={{ width: "auto" }} value={settings.refDolar} onChange={e => setSettings(s => ({ ...s, refDolar: e.target.value }))}>
+              <option value="bolsa">Dólar MEP (ref.)</option><option value="contadoconliqui">Dólar CCL</option>
+              <option value="cripto">Dólar Cripto</option><option value="blue">Dólar Blue</option><option value="oficial">Dólar Oficial</option>
+            </select>
+            <button className="btn" onClick={onRefresh} disabled={loading}><RefreshCw size={14} className={loading ? "spin" : ""} />Actualizar</button>
+          </div>
+        </div>
+        <div className="macro-rail">
+          {cell("MEP", d?.bolsa ? "$" + fmt(d.bolsa.venta, 0) : "—", null, "bolsa")}
+          {cell("CCL", d?.contadoconliqui ? "$" + fmt(d.contadoconliqui.venta, 0) : "—", null, "contadoconliqui")}
+          {cell("Blue", d?.blue ? "$" + fmt(d.blue.venta, 0) : "—", null, "blue")}
+          {cell("Cripto", d?.cripto ? "$" + fmt(d.cripto.venta, 0) : "—", null, "cripto")}
+          {cell("Oficial", d?.oficial ? "$" + fmt(d.oficial.venta, 0) : "—", null, "oficial")}
+          {cell("Riesgo País", macro.riesgo ? fmt(macro.riesgo.valor, 0) + " pb" : "—", macro.riesgo?.fecha, "riesgo")}
+          <div className="macro-cell" style={{ minWidth: 128 }}><div className="eyebrow">T.C. referencia</div>
+            <div className="mono" style={{ fontSize: 17, fontWeight: 600, marginTop: 3 }}>{refRate ? "$" + fmt(refRate, 0) : "—"}</div>
+            <div className="muted" style={{ fontSize: 10, marginTop: 1 }}>{macro.updated ? "Act. " + macro.updated.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "sin datos"}</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- macro history modal ---- */
+function MacroModal({ item, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const isRiesgo = item.key === "riesgo";
+  useEffect(() => {
+    setLoading(true); setErr("");
+    const url = isRiesgo
+      ? "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais"
+      : `https://api.argentinadatos.com/v1/cotizaciones/dolares/${item.key}`;
+    fetch(url).then(r => r.json()).then(arr => {
+      if (!Array.isArray(arr) || !arr.length) throw new Error("no data");
+      const cut = "2021-01-01";
+      const pts = arr.filter(x => x.fecha >= cut).filter((_, i) => i % 5 === 0)
+        .map(x => ({ date: x.fecha, v: isRiesgo ? x.valor : x.venta }));
+      setData(pts);
+    }).catch(() => setErr("No pude traer el histórico ahora.")).finally(() => setLoading(false));
+  }, [item.key]);
+  const cur = data && data.length ? data[data.length - 1].v : null;
+  const first = data && data.length ? data[0].v : null;
+  const chg = (cur != null && first) ? ((cur / first - 1) * 100) : null;
+  const color = isRiesgo ? "#E8604C" : "#74ACDF";
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal panel" style={{ padding: 24, maxWidth: 680 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 600 }}>{item.label} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· histórico desde 2021</span></h3>
+          <button className="btn-ghost btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        {cur != null && <div style={{ display: "flex", gap: 28, marginBottom: 16 }}>
+          <div><div className="eyebrow">Valor actual</div><div className="kpi-num gold" style={{ fontSize: 24, marginTop: 4 }}>{isRiesgo ? fmt(cur, 0) + " pb" : "$" + fmt(cur, 0)}</div></div>
+          {chg != null && <div><div className="eyebrow">Cambio desde 2021</div><div className={"kpi-num " + (chg >= 0 ? (isRiesgo ? "loss" : "gain") : (isRiesgo ? "gain" : "loss"))} style={{ fontSize: 24, marginTop: 4 }}>{fmtPct(chg)}</div></div>}
+        </div>}
+        {loading ? <div className="empty" style={{ padding: 40 }}><Loader2 size={20} className="spin" /></div> :
+          err ? <div style={{ color: "var(--loss)", fontSize: 12.5 }}><AlertTriangle size={12} /> {err}</div> :
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={data}>
+              <defs><linearGradient id="gm" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={.4} /><stop offset="100%" stopColor={color} stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="date" stroke="#5C6F7E" fontSize={10} interval={Math.ceil((data?.length || 1) / 8)} tickFormatter={v => v.slice(0, 7)} />
+              <YAxis stroke="#5C6F7E" fontSize={10} tickFormatter={v => isRiesgo ? fmt(v, 0) : "$" + (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v)} />
+              <Tooltip contentStyle={ttStyle} formatter={v => [isRiesgo ? fmt(v, 0) + " pb" : "$" + fmt(v, 0), item.label]} />
+              <Area type="monotone" dataKey="v" stroke={color} strokeWidth={2} fill="url(#gm)" />
+            </AreaChart>
+          </ResponsiveContainer>}
+        <p className="muted" style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>Fuente: argentinadatos.com. {isRiesgo ? "El riesgo país baja = mejor percepción de la deuda argentina." : "Serie diaria del tipo de cambio (precio de venta)."}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== hero ============================== */
+function Hero({ totals, pnlUSD, pnlPct, aportesUSD, count, rate, base, money, refRate }) {
+  const up = pnlUSD >= 0;
+  const r = refRate || 1;
+  const pnlBase = base === "ARS" ? (up ? "+" : "") + fmtARS((totals.valARS - totals.costARS)) : (up ? "+" : "") + fmtUSD(pnlUSD);
+  const dayBase = rate ? (rate.run.d >= 0 ? "+" : "") + money(rate.run.d, rate.run.d * r) : "—";
+  const monthBase = rate ? money(rate.run.m, rate.run.m * r) : "—";
+  return (
+    <div className="panel" style={{ padding: "26px 28px", background: "linear-gradient(135deg,#16212B,#131C24)", position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", right: -40, top: -40, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle,rgba(116,172,223,.10),transparent 70%)" }} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 30, alignItems: "flex-end", justifyContent: "space-between" }}>
+        <div>
+          <div className="eyebrow">Valor total de cartera · {count} posiciones</div>
+          <div className="kpi-num gold" style={{ fontSize: 44, marginTop: 8 }}>{base === "ARS" ? fmtARS(totals.valARS) : fmtUSD(totals.valUSD)}</div>
+          <div className="mono muted" style={{ fontSize: 15, marginTop: 4 }}>{base === "ARS" ? fmtUSD(totals.valUSD) : fmtARS(totals.valARS)}</div>
+        </div>
+        <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+          <Kpi label={"Resultado (" + (base === "ARS" ? "ARS" : "USD") + ")"} big={pnlBase} sub={fmtPct(pnlPct) + " s/costo"} tone={up ? "gain" : "loss"} icon={up ? TrendingUp : TrendingDown} />
+          <Kpi label="Ritmo actual · por día" big={dayBase} sub={monthBase + " / mes"} tone={rate && rate.run.d >= 0 ? "gain" : "loss"} icon={Gauge} />
+          <Kpi label="Capital aportado" big={base === "ARS" ? fmtARS(aportesUSD * r) : fmtUSD(aportesUSD)} sub={"Costo " + money(totals.costUSD, totals.costARS)} tone="cel" icon={PiggyBank} />
+        </div>
+      </div>
+    </div>
+  );
+}
+function Kpi({ label, big, sub, tone, icon: Ic }) {
+  return (<div><div className="eyebrow" style={{ display: "flex", alignItems: "center", gap: 6 }}>{Ic && <Ic size={11} />}{label}</div>
+    <div className={"kpi-num " + tone} style={{ fontSize: 22, marginTop: 7 }}>{big}</div>
+    <div className={"mono " + (tone === "muted" ? "muted" : tone)} style={{ fontSize: 12, marginTop: 3 }}>{sub}</div></div>);
+}
+
+/* ============================== cartera tab ============================== */
+function Cartera({ rows, setHoldings, base, money, refRate }) {
+  const [edit, setEdit] = useState(null);
+  const [showImport, setShowImport] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [open, setOpen] = useState({});
+  const r = refRate || 1;
+  // group by class, groups sorted by total value
+  const groups = useMemo(() => {
+    const m = {};
+    rows.forEach(x => { (m[x.cls] = m[x.cls] || []).push(x); });
+    return Object.entries(m).map(([cls, items]) => {
+      items.sort((a, b) => b.m.valUSD - a.m.valUSD);
+      const valUSD = items.reduce((s, x) => s + x.m.valUSD, 0);
+      const valARS = items.reduce((s, x) => s + x.m.valARS, 0);
+      const pnlUSD = items.reduce((s, x) => s + x.m.pnlUSD, 0);
+      const pnlARS = items.reduce((s, x) => s + x.m.pnlARS, 0);
+      const costUSD = items.reduce((s, x) => s + x.m.costUSD, 0);
+      return { cls, items, valUSD, valARS, pnlUSD, pnlARS, pct: costUSD ? (pnlUSD / costUSD) * 100 : 0 };
+    }).sort((a, b) => b.valUSD - a.valUSD);
+  }, [rows]);
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Posiciones por tipo de activo</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn" onClick={() => setShowImport(true)}><Upload size={14} />Reimportar Excel</button>
+          <button className="btn-accent btn" onClick={() => setEdit({ id: uid(), ticker: "", name: "", cls: "MERVAL", broker: "BALANZ", currency: "ARS", qty: 0, investedARS: 0, investedUSD: 0, manualPrice: 0, firstDate: today(), _new: true })}><Plus size={14} />Agregar activo</button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 16 }}>
+        {groups.map(g => {
+          const isOpen = !!open[g.cls];
+          return (
+          <div key={g.cls} className="panel scrollx">
+            <div onClick={() => setOpen(o => ({ ...o, [g.cls]: !o[g.cls] }))}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px", borderBottom: isOpen ? "1px solid var(--line)" : "none", flexWrap: "wrap", gap: 8, cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {isOpen ? <ChevronDown size={15} className="muted" /> : <ChevronRight size={15} className="muted" />}
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: CLASS_COLOR[g.cls] }} />
+                <span style={{ fontFamily: "var(--display)", fontWeight: 600, fontSize: 14 }}>{CLASS_LABEL[g.cls]}</span>
+                <span className="muted mono" style={{ fontSize: 11 }}>{g.items.length} {g.items.length === 1 ? "posición" : "posiciones"}</span>
+              </div>
+              <div style={{ display: "flex", gap: 18, alignItems: "baseline" }}>
+                <span className="mono gold" style={{ fontSize: 14, fontWeight: 600 }}>{base === "ARS" ? fmtARS(g.valARS) : fmtUSD(g.valUSD)}</span>
+                <span className={"mono " + (g.pnlUSD >= 0 ? "gain" : "loss")} style={{ fontSize: 12 }}>{(g.pnlUSD >= 0 ? "+" : "") + money(g.pnlUSD, g.pnlARS)} ({fmtPct(g.pct)})</span>
+              </div>
+            </div>
+            {isOpen && <table>
+              <thead><tr>
+                <th className="l">Activo</th><th>Cant.</th><th>P. compra</th><th>P. actual</th>
+                <th>Valor {base === "ARS" ? "$" : "US$"}</th><th>P&L {base === "ARS" ? "$" : "US$"}</th><th>%</th><th></th>
+              </tr></thead>
+              <tbody>
+                {g.items.map(x => {
+                  const up = x.m.pnlUSD >= 0; const sym = x.currency === "USD" ? "US$" : "$";
+                  const valB = base === "ARS" ? x.m.valARS : x.m.valUSD;
+                  const pnlB = base === "ARS" ? x.m.pnlARS : x.m.pnlUSD;
+                  const pctB = base === "ARS" ? x.m.pnlPctARS : x.m.pnlPctUSD;
+                  return (
+                    <tr key={x.id} style={{ cursor: "pointer" }} onClick={() => setDetail(x)}>
+                      <td className="l"><div style={{ fontFamily: "var(--display)", fontWeight: 600 }}>{x.ticker}{x.liveAt && <span className="dot" style={{ background: "var(--gain)", marginLeft: 7 }} title="Precio en vivo" />}</div>
+                        <div className="muted" style={{ fontSize: 11 }}>{x.name} · {x.broker}</div></td>
+                      <td className="mono">{fmt(x.m.qty, x.m.qty < 1 ? 4 : 2)}</td>
+                      <td className="mono muted">{sym}{fmt(x.m.avgNative, x.m.avgNative < 10 ? 4 : 0)}</td>
+                      <td className="mono">{sym}{fmt(x.m.price, x.m.price < 10 ? 4 : 0)}</td>
+                      <td className="mono gold">{fmt(valB, 0)}</td>
+                      <td className={"mono " + (up ? "gain" : "loss")} title={x.costEstimated ? "Costo estimado — cargá tu PPC" : ""}>{x.costEstimated ? "~" : ""}{(pnlB >= 0 ? "+" : "") + fmt(pnlB, 0)}</td>
+                      <td className={"mono " + (up ? "gain" : "loss")}>{fmtPct(pctB)}</td>
+                      <td><button className="btn-ghost btn" style={{ padding: 6 }} onClick={(e) => { e.stopPropagation(); setEdit(x); }}><Pencil size={13} /></button></td>
+                    </tr>);
+                })}
+              </tbody>
+            </table>}
+          </div>);
+        })}
+      </div>
+
+      <p className="muted" style={{ fontSize: 11, marginTop: 12, lineHeight: 1.5 }}>
+        <ShieldCheck size={11} style={{ verticalAlign: -1 }} /> Tocá cualquier fila para ver el detalle y el gráfico. Tenencias y costo reales de tus resúmenes oficiales: <strong className="cel">Balanz</strong> lote por lote y <strong className="cel">Allaria</strong> por PPC. El P&amp;L es exacto salvo filas con <strong>~</strong>. <strong>Cripto</strong> en vivo (punto verde).
+      </p>
+      {detail && <DetailModal row={detail} onClose={() => setDetail(null)} base={base} refRate={refRate} />}
+      {edit && <EditModal row={edit} onClose={() => setEdit(null)} setHoldings={setHoldings} />}
+      {showImport && <ImportModal onClose={() => setShowImport(false)} setHoldings={setHoldings} />}
+    </>
+  );
+}
+
+/* ---- detail modal with price / accumulation history ---- */
+function DetailModal({ row, onClose, base, refRate }) {
+  const sym = row.currency === "USD" ? "US$" : "$";
+  const up = row.m.pnlUSD >= 0;
+  const accum = row.cls === "CRYPTO" ? NEXO_ACCUM[row.ticker] : null;
+  const fld = (l, v) => (<div><div className="eyebrow">{l}</div><div className="mono" style={{ fontSize: 15, marginTop: 4 }}>{v}</div></div>);
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal panel" style={{ padding: 24, maxWidth: 680 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+          <div><h3 style={{ fontSize: 18, fontWeight: 600 }}>{row.ticker} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· {row.name}</span></h3>
+            <span className="chip" style={{ color: CLASS_COLOR[row.cls], borderColor: CLASS_COLOR[row.cls] + "55", marginTop: 6, display: "inline-block" }}>{CLASS_LABEL[row.cls]} · {row.broker}</span></div>
+          <button className="btn-ghost btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 18 }}>
+          {fld("Cantidad", fmt(row.m.qty, row.m.qty < 1 ? 4 : 2))}
+          {fld("P. compra prom.", sym + fmt(row.m.avgNative, row.m.avgNative < 10 ? 4 : 0))}
+          {fld("P. actual", sym + fmt(row.m.price, row.m.price < 10 ? 4 : 0))}
+          {fld("Valor", base === "ARS" ? fmtARS(row.m.valARS) : fmtUSD(row.m.valUSD))}
+        </div>
+        <div style={{ display: "flex", gap: 28, marginBottom: 18, padding: "12px 0", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+          <div><div className="eyebrow">Resultado USD</div><div className={"kpi-num " + (up ? "gain" : "loss")} style={{ fontSize: 18, marginTop: 4 }}>{(up ? "+" : "") + fmtUSD(row.m.pnlUSD)}</div><div className={"mono " + (up ? "gain" : "loss")} style={{ fontSize: 11 }}>{fmtPct(row.m.pnlPctUSD)}</div></div>
+          <div><div className="eyebrow">Resultado ARS</div><div className={"kpi-num " + (row.m.pnlARS >= 0 ? "gain" : "loss")} style={{ fontSize: 18, marginTop: 4 }}>{(row.m.pnlARS >= 0 ? "+" : "") + fmtARS(row.m.pnlARS)}</div><div className={"mono " + (row.m.pnlARS >= 0 ? "gain" : "loss")} style={{ fontSize: 11 }}>{fmtPct(row.m.pnlPctARS)}</div></div>
+        </div>
+
+        {accum ? (
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>Tenencia acumulada · nominales de {row.ticker}</div>
+            <p className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>El precio de cripto depende del ciclo (post-halving, bear/bull) y es engañoso. Lo que importa es cuánto acumulaste: estos son tus {row.ticker} reales mes a mes.</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={accum}>
+                <defs><linearGradient id="gac" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CLASS_COLOR.CRYPTO} stopOpacity={.45} /><stop offset="100%" stopColor={CLASS_COLOR.CRYPTO} stopOpacity={0} /></linearGradient></defs>
+                <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+                <XAxis dataKey="date" stroke="#5C6F7E" fontSize={10} interval={Math.ceil(accum.length / 8)} />
+                <YAxis stroke="#5C6F7E" fontSize={10} tickFormatter={v => fmt(v, v < 1 ? 4 : 0)} />
+                <Tooltip contentStyle={ttStyle} formatter={v => [fmt(v, v < 1 ? 6 : 2) + " " + row.ticker, "Tenencia"]} />
+                <Area type="stepAfter" dataKey="qty" stroke={CLASS_COLOR.CRYPTO} strokeWidth={2} fill="url(#gac)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Precio de compra vs. actual</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={[{ k: "P. compra prom.", v: row.m.avgNative }, { k: "P. actual", v: row.m.price }]}>
+                <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+                <XAxis dataKey="k" stroke="#5C6F7E" fontSize={11} /><YAxis stroke="#5C6F7E" fontSize={10} />
+                <Tooltip contentStyle={ttStyle} formatter={v => [sym + fmt(v, v < 10 ? 4 : 0), "Precio"]} cursor={{ fill: "#1C2832" }} />
+                <Bar dataKey="v" radius={[4, 4, 0, 0]}><Cell fill="#5C6F7E" /><Cell fill={up ? "#43C28A" : "#E8604C"} /></Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <p className="muted" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5 }}>El historial de precios de mercado para acciones y bonos argentinos no está disponible en esta versión (requiere el backend desplegado). Por ahora ves tu precio de compra promedio vs. el actual.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditModal({ row, onClose, setHoldings }) {
+  const [h, setH] = useState({ ...row });
+  const set = (k, v) => setH(p => ({ ...p, [k]: v }));
+  const save = () => {
+    const c = { ...h, ticker: (h.ticker || "").toUpperCase().trim(), qty: +h.qty, investedARS: +h.investedARS, investedUSD: +h.investedUSD, manualPrice: +h.manualPrice };
+    delete c._new; delete c.m;
+    if (c.cls === "CRYPTO" && !c.coingeckoId) c.coingeckoId = CRYPTO_IDS[c.ticker] || "";
+    setHoldings(hs => row._new ? [...hs, c] : hs.map(x => x.id === c.id ? c : x)); onClose();
+  };
+  const remove = () => { setHoldings(hs => hs.filter(x => x.id !== h.id)); onClose(); };
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal panel" style={{ padding: 24 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600 }}>{row._new ? "Nuevo activo" : "Editar " + row.ticker}</h3>
+          <button className="btn-ghost btn" onClick={onClose}><X size={16} /></button></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="field"><label>Ticker</label><input className="input" value={h.ticker} onChange={e => set("ticker", e.target.value)} /></div>
+          <div className="field"><label>Nombre</label><input className="input" value={h.name} onChange={e => set("name", e.target.value)} /></div>
+          <div className="field"><label>Clase</label><select className="sel" value={h.cls} onChange={e => set("cls", e.target.value)}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
+          <div className="field"><label>Broker / Exchange</label><select className="sel" value={h.broker} onChange={e => set("broker", e.target.value)}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
+          <div className="field"><label>Moneda cotización</label><select className="sel" value={h.currency} onChange={e => set("currency", e.target.value)}><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></div>
+          <div className="field"><label>Cantidad</label><input className="input mono" type="number" value={h.qty} onChange={e => set("qty", e.target.value)} /></div>
+          <div className="field"><label>Invertido total (ARS)</label><input className="input mono" type="number" value={h.investedARS} onChange={e => set("investedARS", e.target.value)} /></div>
+          <div className="field"><label>Invertido total (USD)</label><input className="input mono" type="number" value={h.investedUSD} onChange={e => set("investedUSD", e.target.value)} /></div>
+          <div className="field"><label>Precio actual ({h.currency})</label><input className="input mono" type="number" value={h.manualPrice} onChange={e => set("manualPrice", e.target.value)} /></div>
+          <div className="field"><label>Fecha 1ª compra</label><input className="input" type="date" value={h.firstDate} onChange={e => set("firstDate", e.target.value)} /></div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+          {!row._new ? <button className="btn" style={{ color: "var(--loss)", borderColor: "#5a2a25" }} onClick={remove}><Trash2 size={14} />Eliminar</button> : <span />}
+          <button className="btn-accent btn" onClick={save}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- importer: re-aggregates the INVERSION.xlsx format ---- */
+function ImportModal({ onClose, setHoldings }) {
+  const [err, setErr] = useState(""); const [preview, setPreview] = useState(null);
+  const CLS = {AL30:"BONO_NAC",GD30:"BONO_NAC",GD41:"BONO_NAC",GGAL:"MERVAL",BYMA:"MERVAL",LOMA:"MERVAL",MIRG:"MERVAL",NVDA:"CEDEAR",GOOGL:"CEDEAR",KO:"CEDEAR",BRKB:"CEDEAR",CVX:"CEDEAR",MELI:"CEDEAR",SPY:"ETF",XLF:"ETF",BTC:"CRYPTO",USDT:"CRYPTO"};
+  const CANON = {"ACCIONES - AL30":"AL30",MIRGOR:"MIRG","SPY&500":"SPY",SPY500:"SPY","S&P500":"SPY"};
+  const num = (x) => { if (x == null || x === "") return NaN; if (typeof x === "number") return x; const v = parseFloat(String(x).replace(/\./g, "").replace(",", ".")); return isNaN(v) ? parseFloat(String(x).replace(",", ".")) : v; };
+
+  const onFile = (e) => {
+    const f = e.target.files?.[0]; if (!f) return; setErr("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "array" });
+        let txs = [];
+        wb.SheetNames.forEach(sn => {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: false, defval: "" });
+          for (let i = 0; i < rows.length; i++) {
+            if (String(rows[i][0]).trim().toLowerCase() === "fecha") {
+              for (let j = i + 1; j < rows.length; j++) {
+                const r = rows[j], f0 = String(r[0] || "");
+                if (!f0 || f0.toUpperCase().includes("TOTAL")) break;
+                const dt = new Date(r[0]); if (isNaN(dt)) continue;
+                txs.push({ fecha: dt.toISOString().slice(0, 10), plat: String(r[1] || "").trim(), activo: String(r[2] || "").trim().toUpperCase(), monto: num(r[3]), cotiz: num(r[4]), mep: num(r[5]) });
+              }
+            }
+          }
+        });
+        if (!txs.length) { setErr("No encontré transacciones con el formato Fecha/Plataforma/Activo/Monto/Cotización."); return; }
+        txs.sort((a, b) => a.fecha.localeCompare(b.fecha));
+        /* fill mep (forward then back) */
+        let last = NaN; txs.forEach(t => { if (!isNaN(t.mep) && t.mep > 200 && t.mep < 3000) last = t.mep; else t.mep = last; });
+        for (let k = txs.length - 1; k >= 0; k--) { if (isNaN(txs[k].mep)) txs[k].mep = txs[k + 1]?.mep; }
+        const agg = {};
+        txs.forEach(t => {
+          const tk = CANON[t.activo] || t.activo; if (!tk || isNaN(t.monto)) return;
+          const crypto = tk === "BTC" || tk === "USDT";
+          let pAars;
+          if (tk === "BTC") pAars = t.cotiz > 1e6 ? t.cotiz : t.cotiz * t.mep;
+          else if (tk === "USDT") pAars = t.cotiz > 100 ? t.cotiz : t.mep;
+          else pAars = t.cotiz;
+          const qty = pAars ? t.monto / pAars : 0;
+          const invUSD = t.mep ? t.monto / t.mep : 0;
+          if (!agg[tk]) agg[tk] = { ticker: tk, qty: 0, investedARS: 0, investedUSD: 0, crypto, first: t.fecha, plat: t.plat };
+          agg[tk].qty += qty; agg[tk].investedARS += t.monto; agg[tk].investedUSD += invUSD;
+          if (t.fecha < agg[tk].first) agg[tk].first = t.fecha;
+        });
+        setPreview(Object.values(agg));
+      } catch { setErr("No pude leer el archivo. Usá el .xlsx original."); }
+    };
+    reader.readAsArrayBuffer(f);
+  };
+
+  const apply = () => {
+    const hs = preview.map(p => ({ id: uid(), ticker: p.ticker, name: p.ticker, cls: CLS[p.ticker] || "CEDEAR",
+      broker: p.crypto ? "NEXO" : "BALANZ", currency: p.crypto ? "USD" : "ARS",
+      qty: p.qty, investedARS: p.investedARS, investedUSD: p.investedUSD,
+      avgNative: p.crypto ? p.investedUSD / p.qty : p.investedARS / p.qty,
+      manualPrice: p.crypto ? p.investedUSD / p.qty : p.investedARS / p.qty,
+      coingeckoId: CRYPTO_IDS[p.ticker] || "", firstDate: p.first, liveAt: null }));
+    setHoldings(hs); onClose();
+  };
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal panel" style={{ padding: 24 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600 }}>Reimportar INVERSION.xlsx</h3>
+          <button className="btn-ghost btn" onClick={onClose}><X size={16} /></button></div>
+        <p className="muted" style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>Subí tu Excel actualizado (con meses nuevos) y recalculo todas las posiciones desde cero: cantidad, costo promedio y dólares invertidos al MEP de cada compra. Esto <strong>reemplaza</strong> la cartera actual.</p>
+        <input type="file" accept=".xlsx,.xls" onChange={onFile} className="input" style={{ padding: 9 }} />
+        {err && <div style={{ color: "var(--loss)", fontSize: 12.5, marginTop: 10 }}><AlertTriangle size={12} /> {err}</div>}
+        {preview && (<div style={{ marginTop: 14 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>{preview.length} posiciones detectadas</div>
+          <div style={{ maxHeight: 220, overflow: "auto" }}>
+            {preview.sort((a, b) => b.investedUSD - a.investedUSD).map(p => (
+              <div key={p.ticker} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12.5 }}>
+                <span style={{ fontFamily: "var(--display)", fontWeight: 600 }}>{p.ticker}</span>
+                <span className="mono muted">{fmt(p.qty, p.qty < 1 ? 4 : 2)} u · {fmtUSD(p.investedUSD)}</span>
+              </div>))}
+          </div>
+          <button className="btn-accent btn" style={{ width: "100%", marginTop: 12 }} onClick={apply}>Reemplazar cartera</button>
+        </div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== ritmo de ganancia tab ============================== */
+function Ritmo({ rate, totals, pnlUSD, refRate }) {
+  if (!rate) return <div className="empty">Sin datos suficientes.</div>;
+  const since = new Date(rate.firstMs).toLocaleDateString("es-AR");
+  const card = (label, v, big) => (
+    <div className="rate-card" style={big ? { background: "linear-gradient(135deg,#1A2A24,#15211C)", borderColor: "#2C5A47" } : {}}>
+      <div className="eyebrow">{label}</div>
+      <div className={"kpi-num " + (v >= 0 ? "gain" : "loss")} style={{ fontSize: big ? 28 : 22, marginTop: 8 }}>{(v >= 0 ? "+" : "") + fmtUSD(v)}</div>
+      <div className="mono muted" style={{ fontSize: 11, marginTop: 3 }}>{fmtARS(v * (refRate || 1))}</div></div>
+  );
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="panel" style={{ padding: 24, background: "linear-gradient(135deg,#16212B,#131C24)", border: "1px solid #2C5A47" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <Gauge size={16} className="gain" />
+          <span className="eyebrow gain" style={{ letterSpacing: ".18em" }}>● Ritmo actual — lo que estás generando hoy</span>
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 18 }}>A tu retorno anualizado real de <strong className="gold">{fmtPct(rate.ann)}</strong> (CAGR, <strong>sin contar cripto</strong>), tu cartera invertida de {fmtUSD(rate.val)} está generando a este ritmo:</p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {card("Por día", rate.run.d, true)}{card("Por semana", rate.run.w)}{card("Por mes", rate.run.m)}{card("Por año", rate.run.y)}
+        </div>
+        <p className="muted" style={{ fontSize: 11, marginTop: 14, lineHeight: 1.5 }}><AlertTriangle size={11} style={{ verticalAlign: -1 }} /> Indicativo, no garantizado. Excluye cripto porque su precio depende del ciclo (post-halving, bull/bear) y distorsiona el ritmo.</p>
+      </div>
+      <div className="panel" style={{ padding: 22 }}>
+        <div className="eyebrow muted" style={{ marginBottom: 4 }}>○ Promedio histórico — ganancia repartida en el tiempo</div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Tu resultado total (sin cripto) de <strong className={rate.pnl >= 0 ? "gain" : "loss"}>{fmtUSD(rate.pnl)}</strong>, repartido sobre los <strong>{Math.round(rate.days)} días</strong> desde tu primera compra ({since}). Promedio simple, no anualizado.</p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {card("Por día", rate.avg.d)}{card("Por semana", rate.avg.w)}{card("Por mes", rate.avg.m)}{card("Por año", rate.avg.y)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== evolución tab ============================== */
+function Evolucion({ rows, history, totals, base, money, refRate }) {
+  const byClass = useMemo(() => { const m = {}; rows.forEach(r => { m[r.cls] = (m[r.cls] || 0) + r.m.valUSD; }); return Object.entries(m).map(([k, v]) => ({ name: CLASS_LABEL[k], value: v, color: CLASS_COLOR[k] })).filter(x => x.value > 0); }, [rows]);
+  const byBroker = useMemo(() => { const m = {}; rows.forEach(r => { m[r.broker] = (m[r.broker] || 0) + (base === "ARS" ? r.m.valARS : r.m.valUSD); }); return Object.entries(m).map(([k, v]) => ({ name: k, value: v, hasCrypto: rows.some(r => r.broker === k && r.cls === "CRYPTO") })).filter(x => x.value > 0).sort((a, b) => b.value - a.value); }, [rows, base]);
+  const totalBase = base === "ARS" ? totals.valARS : totals.valUSD;
+  // perfil de riesgo
+  const risk = useMemo(() => {
+    if (!totals.valUSD) return null;
+    let score = 0; const byCls = {};
+    rows.forEach(r => { byCls[r.cls] = (byCls[r.cls] || 0) + r.m.valUSD; });
+    Object.entries(byCls).forEach(([c, v]) => { score += (CLASS_RISK[c] ?? 50) * (v / totals.valUSD); });
+    const top = Math.max(...rows.map(r => r.m.valUSD)) / totals.valUSD * 100;
+    const cryptoW = (byCls.CRYPTO || 0) / totals.valUSD * 100;
+    const label = score < 28 ? "Conservadora" : score < 45 ? "Moderada" : score < 62 ? "Audaz" : "Agresiva";
+    const color = score < 28 ? "#43C28A" : score < 45 ? "#8FB996" : score < 62 ? "#CBA45E" : "#E8604C";
+    return { score, label, color, top, cryptoW };
+  }, [rows, totals]);
+  const pnlByAsset = useMemo(() => [...rows]
+    .filter(r => r.cls !== "CRYPTO" && r.cls !== "EFECTIVO" && r.cls !== "FCI" && Math.abs(r.m.pnlUSD) >= 50)
+    .sort((a, b) => b.m.pnlUSD - a.m.pnlUSD)
+    .slice(0, 14)
+    .map(r => ({ name: r.ticker, pnl: r.m.pnlUSD, color: CLASS_COLOR[r.cls], cls: CLASS_LABEL[r.cls] })), [rows]);
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {risk && <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>Perfil de riesgo de la cartera</div>
+        <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 220 }}>
+            <div style={{ width: 58, height: 58, borderRadius: "50%", border: "4px solid " + risk.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ShieldAlert size={26} color={risk.color} />
+            </div>
+            <div><div className="kpi-num" style={{ fontSize: 22, color: risk.color }}>{risk.label}</div>
+              <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>índice {risk.score.toFixed(0)}/100</div></div>
+          </div>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ position: "relative", height: 12, borderRadius: 6, background: "linear-gradient(90deg,#43C28A,#8FB996,#CBA45E,#E8604C)", marginBottom: 8 }}>
+              <div style={{ position: "absolute", left: `calc(${Math.min(98, risk.score)}% - 7px)`, top: -4, width: 14, height: 20, borderRadius: 4, background: "#fff", border: "2px solid #0D1318" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted" style={{ fontSize: 10 }}>Conservadora</span><span className="muted" style={{ fontSize: 10 }}>Moderada</span><span className="muted" style={{ fontSize: 10 }}>Audaz</span><span className="muted" style={{ fontSize: 10 }}>Agresiva</span></div>
+          </div>
+        </div>
+        <p className="muted" style={{ fontSize: 11.5, marginTop: 14, lineHeight: 1.6 }}>
+          Pondera cada clase por su riesgo (efectivo y FCI bajo; <strong>bonos soberanos AR alto pese a ser "bonos"</strong>; acciones medio-alto; cripto muy alto) según su peso real. Tu mayor posición concentra el <strong style={{ color: risk.top > 20 ? "var(--loss)" : "inherit" }}>{risk.top.toFixed(0)}%</strong>{risk.top > 20 ? " — ojo con la concentración" : ""}. Cripto pesa {risk.cryptoW.toFixed(0)}%.
+        </p>
+      </div>}
+
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Evolución del valor de cartera (US$)</div>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Se construye con un snapshot cada vez que apretás "Actualizar". Cuantos más días, más rica la serie.</p>
+        {history.length < 2 ? <div className="empty" style={{ padding: 30 }}>Apretá "Actualizar" en distintos días para registrar la serie.</div> :
+          <ResponsiveContainer width="100%" height={260}><AreaChart data={history}>
+            <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#74ACDF" stopOpacity={.5} /><stop offset="100%" stopColor="#74ACDF" stopOpacity={0} /></linearGradient></defs>
+            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+            <XAxis dataKey="date" stroke="#5C6F7E" fontSize={11} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+            <Tooltip contentStyle={ttStyle} formatter={(v, n) => [fmtUSD(v), n === "valUSD" ? "Cartera" : "Aportes"]} />
+            <Area type="monotone" dataKey="aportesUSD" stroke="#CBA45E" strokeWidth={1.5} fill="none" strokeDasharray="4 3" />
+            <Area type="monotone" dataKey="valUSD" stroke="#74ACDF" strokeWidth={2} fill="url(#g1)" />
+          </AreaChart></ResponsiveContainer>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="panel" style={{ padding: 20 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Composición por clase</div>
+          <ResponsiveContainer width="100%" height={230}><PieChart>
+            <Pie data={byClass} dataKey="value" nameKey="name" innerRadius={55} outerRadius={88} paddingAngle={2}>{byClass.map((e, i) => <Cell key={i} fill={e.color} stroke="#0D1318" strokeWidth={2} />)}</Pie>
+            <Tooltip contentStyle={ttStyle} content={({ active, payload }) => {
+              if (!active || !payload || !payload.length) return null;
+              const p = payload[0].payload;
+              return (<div style={{ background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, padding: "8px 11px", fontSize: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: p.color }} /><span style={{ color: "#E7EEF4", fontWeight: 600 }}>{p.name}</span></div>
+                <div className="mono gold">{fmtUSD(p.value)}</div>
+                <div className="mono muted" style={{ fontSize: 11 }}>{((p.value / totals.valUSD) * 100).toFixed(1)}% de la cartera</div>
+              </div>);
+            }} /></PieChart></ResponsiveContainer>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>{byClass.map(e => <span key={e.name} className="chip" style={{ color: e.color, borderColor: e.color + "55" }}>{e.name} · {((e.value / totals.valUSD) * 100).toFixed(0)}%</span>)}</div>
+        </div>
+        <div className="panel" style={{ padding: 20 }}>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>Top contribuidores al resultado · US$</div>
+          <p className="muted" style={{ fontSize: 11, marginBottom: 10 }}>Los que más mueven tu resultado (sin cripto ni efectivo). El <strong>color = clase</strong>, igual que la torta: ves de un vistazo qué tipo de activo te está dando la ganancia.</p>
+          <ResponsiveContainer width="100%" height={Math.max(220, pnlByAsset.length * 24)}><BarChart data={pnlByAsset} layout="vertical" margin={{ left: 6, right: 36 }}>
+            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" horizontal={false} />
+            <XAxis type="number" stroke="#5C6F7E" fontSize={11} tickFormatter={v => (v / 1000).toFixed(0) + "k"} />
+            <YAxis type="category" dataKey="name" stroke="#8597A6" fontSize={11} width={58} />
+            <Tooltip contentStyle={ttStyle} formatter={(v, n, p) => [(v >= 0 ? "+" : "") + fmtUSD(v) + "  ·  " + p.payload.cls, "Resultado"]} cursor={{ fill: "#1C2832" }} />
+            <Bar dataKey="pnl" radius={[0, 3, 3, 0]}>{pnlByAsset.map((e, i) => <Cell key={i} fill={e.pnl >= 0 ? e.color : "#E8604C"} />)}</Bar>
+          </BarChart></ResponsiveContainer>
+        </div>
+      </div>
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Distribución por broker / exchange</div>
+        <p className="muted" style={{ fontSize: 11, marginBottom: 12 }}>Valores reales de tu cartera. Nexo se valúa con el <strong className="gain">precio de BTC en vivo</strong> (apretá Actualizar para refrescar).</p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{byBroker.map(b => (
+          <div key={b.name} style={{ flex: 1, minWidth: 130, padding: "14px 16px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--line)" }}>
+            <div className="mono muted" style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}>{b.name}{b.hasCrypto && <span className="dot" style={{ background: "var(--gain)" }} title="Cripto en vivo" />}</div>
+            <div className="kpi-num gold" style={{ fontSize: 20, marginTop: 5 }}>{base === "ARS" ? fmtARS(b.value) : fmtUSD(b.value)}</div>
+            <div className="muted" style={{ fontSize: 11 }}>{((b.value / totalBase) * 100).toFixed(1)}%</div></div>))}</div>
+      </div>
+    </div>
+  );
+}
+const ttStyle = { background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 12, color: "#E7EEF4" };
+
+/* ============================== aportes tab ============================== */
+function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate }) {
+  const [form, setForm] = useState({ date: today(), amount: "", currency: "USD" });
+  const [op, setOp] = useState({ date: today(), broker: "BALANZ", ticker: "", cls: "CEDEAR", qty: "", price: "", currency: "ARS", mep: "" });
+  const [msg, setMsg] = useState("");
+  const add = () => { if (!+form.amount) return; setAportes(a => [...a, { id: uid(), ...form, amount: +form.amount }]); setForm({ date: today(), amount: "", currency: "USD" }); };
+  const del = (id) => setAportes(a => a.filter(x => x.id !== id));
+  const sorted = [...aportes].sort((a, b) => b.date.localeCompare(a.date));
+  const monthly = useMemo(() => aportes.map(a => ({ mes: a.date.slice(0, 7), usd: a.currency === "USD" ? a.amount : 0 })).sort((x, y) => x.mes.localeCompare(y.mes)), [aportes]);
+
+  const registerOp = () => {
+    const qty = +op.qty, price = +op.price, mep = +op.mep || refRate || 1, tk = op.ticker.toUpperCase().trim();
+    if (!qty || !price || !tk) { setMsg("Completá ticker, nominales y precio."); return; }
+    const addARS = op.currency === "ARS" ? qty * price : qty * price * mep;
+    const addUSD = op.currency === "USD" ? qty * price : qty * price / mep;
+    setHoldings(hs => {
+      const i = hs.findIndex(h => h.ticker === tk && h.broker === op.broker);
+      if (i >= 0) { const h = hs[i]; return hs.map((x, j) => j === i ? { ...h, qty: (+h.qty || 0) + qty, investedARS: (+h.investedARS || 0) + addARS, investedUSD: (+h.investedUSD || 0) + addUSD, manualPrice: price, costEstimated: false } : x); }
+      return [...hs, { id: uid(), ticker: tk, name: tk, cls: op.cls, broker: op.broker, currency: op.currency, qty, investedARS: addARS, investedUSD: addUSD, manualPrice: price, coingeckoId: CRYPTO_IDS[tk] || "", firstDate: op.date, costEstimated: false, liveAt: null }];
+    });
+    setMsg("✓ " + tk + ": +" + fmt(qty, qty < 1 ? 4 : 0) + " nominales cargados en " + op.broker + " (US$ " + fmt(addUSD, 0) + ")");
+    setOp(o => ({ ...o, ticker: "", qty: "", price: "", mep: "" }));
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
+        <div className="panel" style={{ padding: 20 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Aportes mensuales de capital (US$ al MEP de cada mes)</div>
+          <ResponsiveContainer width="100%" height={230}><BarChart data={monthly}>
+            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+            <XAxis dataKey="mes" stroke="#5C6F7E" fontSize={9} interval={2} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+            <Tooltip contentStyle={ttStyle} formatter={v => fmtUSD(v)} cursor={{ fill: "#1C2832" }} />
+            <Bar dataKey="usd" fill="#CBA45E" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>
+          <div className="eyebrow" style={{ margin: "8px 0 8px" }}>Registrar aporte de efectivo</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr auto", gap: 8, alignItems: "center" }}>
+            <input className="input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            <input className="input mono" type="number" placeholder="Monto" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+            <select className="sel" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}><option value="USD">USD</option><option value="ARS">ARS</option></select>
+            <button className="btn-accent btn" onClick={add}><Plus size={14} /></button>
+          </div>
+        </div>
+        <div className="panel" style={{ padding: 20 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Total aportado (USD)</div>
+          <div className="kpi-num cel" style={{ fontSize: 30 }}>{fmtUSD(aportesUSD)}</div>
+          <div className="muted mono" style={{ fontSize: 12, marginBottom: 16 }}>{valUSD >= aportesUSD ? <span className="gain">Tu cartera vale {fmtPct((valUSD / aportesUSD - 1) * 100)} vs. lo aportado</span> : <span className="loss">Tu cartera vale {fmtPct((valUSD / aportesUSD - 1) * 100)} vs. lo aportado</span>}</div>
+          <div style={{ maxHeight: 200, overflow: "auto" }}>{sorted.map(a => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+              <span className="mono muted" style={{ fontSize: 12 }}>{a.date}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}><span className="mono">{a.currency === "USD" ? "US$ " : "$ "}{fmt(a.amount, 0)}</span>
+                <button className="btn-ghost btn" style={{ padding: 4 }} onClick={() => del(a.id)}><Trash2 size={12} /></button></span></div>))}</div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Registrar operación de compra</div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>Cargá una compra y la cartera se actualiza sola: si ya tenés el activo suma los nominales y recalcula el costo promedio; si es nuevo, lo crea. El MEP del día es opcional (si lo dejás vacío uso el de referencia actual).</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, alignItems: "end" }}>
+          <div className="field"><label>Fecha</label><input className="input" type="date" value={op.date} onChange={e => setOp(o => ({ ...o, date: e.target.value }))} /></div>
+          <div className="field"><label>Broker</label><select className="sel" value={op.broker} onChange={e => setOp(o => ({ ...o, broker: e.target.value }))}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
+          <div className="field"><label>Activo</label><input className="input" placeholder="AL30" value={op.ticker} onChange={e => setOp(o => ({ ...o, ticker: e.target.value }))} /></div>
+          <div className="field"><label>Clase</label><select className="sel" value={op.cls} onChange={e => setOp(o => ({ ...o, cls: e.target.value }))}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
+          <div className="field"><label>Nominales</label><input className="input mono" type="number" placeholder="100" value={op.qty} onChange={e => setOp(o => ({ ...o, qty: e.target.value }))} /></div>
+          <div className="field"><label>Precio</label><input className="input mono" type="number" placeholder="936.5" value={op.price} onChange={e => setOp(o => ({ ...o, price: e.target.value }))} /></div>
+          <div className="field"><label>Moneda</label><select className="sel" value={op.currency} onChange={e => setOp(o => ({ ...o, currency: e.target.value }))}><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
+          <div className="field" style={{ maxWidth: 160 }}><label>MEP del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1445"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
+          <button className="btn-accent btn" style={{ marginTop: 18 }} onClick={registerOp}><Plus size={14} />Registrar compra</button>
+          {msg && <span className="mono" style={{ fontSize: 12, marginTop: 18, color: msg.startsWith("✓") ? "var(--gain)" : "var(--loss)" }}>{msg}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== proyección tab ============================== */
+function Proyeccion({ rows, settings, setSettings, classStats }) {
+  // base SIN cripto
+  const valByClass = useMemo(() => { const m = {}; rows.filter(r => r.cls !== "CRYPTO").forEach(r => { m[r.cls] = (m[r.cls] || 0) + r.m.valUSD; }); return m; }, [rows]);
+  const totalNow = Object.values(valByClass).reduce((a, b) => a + b, 0);
+  const monthly = +settings.monthlyAporteUSD || 0;
+  // retorno usado por clase: override del usuario si existe, si no el real de la cartera
+  const ovr = settings.projReturns || {};
+  const retOf = (c) => ovr[c] != null ? ovr[c] : Math.round((classStats[c]?.ann || 0) * 10) / 10;
+  const series = useMemo(() => {
+    const out = [{ year: 0, base: totalNow, conAportes: totalNow }]; let base = totalNow, conA = totalNow;
+    const wRet = totalNow ? Object.entries(valByClass).reduce((s, [c, v]) => s + v * (retOf(c) / 100), 0) / totalNow : 0;
+    for (let y = 1; y <= 10; y++) { base = base * (1 + wRet); conA = conA * (1 + wRet) + monthly * 12; out.push({ year: y, base, conAportes: conA }); }
+    return { out, wRet };
+  }, [valByClass, totalNow, settings, monthly, classStats]);
+  const usarReal = () => setSettings(s => ({ ...s, projReturns: {} }));
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16 }}>
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Proyección a 10 años · cartera invertida sin cripto</div>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Parte de tu valor real ({fmtUSD(totalNow)}) y del <strong>rendimiento anualizado real de cada clase</strong> tomado de Cartera. Retorno ponderado: <strong className="gold">{fmtPct(series.wRet * 100)}</strong>. Editá los supuestos si querés simular otro escenario.</p>
+        <ResponsiveContainer width="100%" height={300}><AreaChart data={series.out}>
+          <defs><linearGradient id="gA" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#43C28A" stopOpacity={.4} /><stop offset="100%" stopColor="#43C28A" stopOpacity={0} /></linearGradient>
+          <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#74ACDF" stopOpacity={.35} /><stop offset="100%" stopColor="#74ACDF" stopOpacity={0} /></linearGradient></defs>
+          <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="year" stroke="#5C6F7E" fontSize={11} tickFormatter={v => "A" + v} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+          <Tooltip contentStyle={ttStyle} formatter={(v, n) => [fmtUSD(v), n === "conAportes" ? "Con aportes" : "Solo capitalización"]} labelFormatter={l => "Año " + l} />
+          <Area type="monotone" dataKey="conAportes" stroke="#43C28A" strokeWidth={2} fill="url(#gA)" />
+          <Area type="monotone" dataKey="base" stroke="#74ACDF" strokeWidth={2} fill="url(#gB)" /></AreaChart></ResponsiveContainer>
+        <div style={{ display: "flex", gap: 24, marginTop: 8 }}>
+          <div><div className="eyebrow">10 años s/aportes</div><div className="kpi-num cel" style={{ fontSize: 20, marginTop: 4 }}>{fmtUSD(series.out[10].base)}</div></div>
+          <div><div className="eyebrow gain">10 años con aportes</div><div className="kpi-num gain" style={{ fontSize: 20, marginTop: 4 }}>{fmtUSD(series.out[10].conAportes)}</div></div>
+        </div>
+      </div>
+      <div className="panel" style={{ padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div className="eyebrow">Retorno anual por clase (%)</div>
+          <button className="btn-ghost btn" style={{ fontSize: 11, padding: "4px 8px" }} onClick={usarReal}>Usar real</button>
+        </div>
+        {CLASSES.filter(c => c !== "CRYPTO" && valByClass[c]).map(c => {
+          const real = Math.round((classStats[c]?.ann || 0) * 10) / 10;
+          return (
+            <div key={c} style={{ display: "grid", gridTemplateColumns: "1fr 70px", gap: 10, alignItems: "center", marginBottom: 9 }}>
+              <span style={{ fontSize: 12.5, color: CLASS_COLOR[c] }}>{CLASS_LABEL[c]}<span className="muted mono" style={{ fontSize: 10, marginLeft: 6 }}>real {fmtPct(real)}</span></span>
+              <input className="input mono" type="number" value={retOf(c)} onChange={e => setSettings(s => ({ ...s, projReturns: { ...(s.projReturns || {}), [c]: +e.target.value } }))} /></div>);
+        })}
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: 12, paddingTop: 12 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Aporte mensual proyectado (US$)</div>
+          <input className="input mono" type="number" value={settings.monthlyAporteUSD} onChange={e => setSettings(s => ({ ...s, monthlyAporteUSD: +e.target.value }))} /></div>
+        <p className="muted" style={{ fontSize: 10.5, marginTop: 12, lineHeight: 1.5 }}>Cripto queda fuera de la proyección: su retorno depende del ciclo y no es proyectable con un CAGR fijo.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== histórico tab ============================== */
+function Historico() {
+  const H = BAL_HIST;
+  const capitalNeto = H.depositos + H.extracciones + H.transfRecibidos + H.transfEnviados;
+  const ganancia = H.tenencia + H.dividendos + H.cupones + H.gastos + H.ajustes;
+  // waterfall: cumulative base + delta
+  const steps = [
+    { name: "Capital neto", val: capitalNeto, type: "cap" },
+    { name: "Resultado tenencia", val: H.tenencia, type: "pos" },
+    { name: "Cupones", val: H.cupones, type: "pos" },
+    { name: "Dividendos", val: H.dividendos, type: "pos" },
+    { name: "Ajustes", val: H.ajustes, type: "pos" },
+    { name: "Gastos", val: H.gastos, type: "neg" },
+  ];
+  let cum = 0; const data = steps.map(s => { const base = s.val >= 0 ? cum : cum + s.val; cum += s.val; return { name: s.name, base, delta: Math.abs(s.val), type: s.type, raw: s.val }; });
+  data.push({ name: "Valor final", base: 0, delta: H.valorFinal, type: "final", raw: H.valorFinal });
+  const colorOf = (t) => t === "cap" ? "#74ACDF" : t === "final" ? "#CBA45E" : t === "neg" ? "#E8604C" : "#43C28A";
+  const line = (label, v, tone) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+      <span className="muted" style={{ fontSize: 13 }}>{label}</span>
+      <span className={"mono " + (tone || "")} style={{ fontSize: 13 }}>{(v >= 0 ? "" : "−") + "US$ " + fmt(Math.abs(v), 0)}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="panel" style={{ padding: "22px 24px", background: "linear-gradient(135deg,#16212B,#131C24)" }}>
+        <div className="eyebrow">Resultado histórico Balanz · desde {H.desde}</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 36, marginTop: 12, alignItems: "flex-end" }}>
+          <div><div className="eyebrow">Valor de la cuenta hoy</div><div className="kpi-num gold" style={{ fontSize: 36, marginTop: 6 }}>{fmtUSD(H.valorFinal)}</div></div>
+          <div><div className="eyebrow cel">Capital neto que pusiste</div><div className="kpi-num cel" style={{ fontSize: 24, marginTop: 6 }}>{fmtUSD(capitalNeto)}</div></div>
+          <div><div className="eyebrow gain">Ganancia que generó</div><div className="kpi-num gain" style={{ fontSize: 24, marginTop: 6 }}>+{fmtUSD(ganancia)}</div>
+            <div className="mono gain" style={{ fontSize: 12, marginTop: 2 }}>{fmtPct(ganancia / capitalNeto * 100)} sobre el capital</div></div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Cómo se construyó tu cuenta (US$)</div>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 18 }}>De US$ 0 en 2017 a US$ {fmt(H.valorFinal, 0)} hoy. La clave: <strong className="cel">{fmtUSD(capitalNeto)}</strong> que aportaste de tu bolsillo + <strong className="gain">{fmtUSD(ganancia)}</strong> que generó solo sosteniendo posiciones.</p>
+
+        {/* barra principal: capital vs ganancia */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ display: "flex", height: 56, borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)" }}>
+            <div style={{ width: (capitalNeto / H.valorFinal * 100) + "%", background: "linear-gradient(135deg,#74ACDF,#5B91C4)", display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 14px", color: "#08151F" }}>
+              <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".04em" }}>CAPITAL APORTADO</span>
+              <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>{fmtUSD(capitalNeto)}</span>
+            </div>
+            <div style={{ width: (ganancia / H.valorFinal * 100) + "%", background: "linear-gradient(135deg,#43C28A,#34A472)", display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 14px", color: "#08151F" }}>
+              <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: ".04em" }}>GANANCIA GENERADA</span>
+              <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>+{fmtUSD(ganancia)}</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+            <span className="muted mono" style={{ fontSize: 11 }}>{(capitalNeto / H.valorFinal * 100).toFixed(0)}% es tuyo</span>
+            <span className="muted mono" style={{ fontSize: 11 }}>{(ganancia / H.valorFinal * 100).toFixed(0)}% lo generó el mercado · = {fmtUSD(H.valorFinal)} hoy</span>
+          </div>
+        </div>
+
+        {/* desglose de la ganancia */}
+        <div className="eyebrow" style={{ margin: "20px 0 10px" }}>De dónde salió esa ganancia</div>
+        {[["Suba de tus posiciones", H.tenencia, "#43C28A"], ["Cupones de bonos", H.cupones, "#5FC9A0"], ["Dividendos", H.dividendos, "#7AD0B0"], ["Ajustes", H.ajustes, "#95D8C2"], ["Gastos y comisiones", H.gastos, "#E8604C"]].map(([lbl, v, col]) => {
+          const pct = Math.abs(v) / (H.tenencia + H.cupones + H.dividendos + H.ajustes) * 100;
+          return (
+            <div key={lbl} style={{ display: "grid", gridTemplateColumns: "150px 1fr 110px", gap: 12, alignItems: "center", marginBottom: 8 }}>
+              <span className="muted" style={{ fontSize: 12 }}>{lbl}</span>
+              <div style={{ height: 14, background: "var(--surface2)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: Math.min(100, pct) + "%", height: "100%", background: col, opacity: v < 0 ? .85 : 1 }} />
+              </div>
+              <span className={"mono " + (v >= 0 ? "gain" : "loss")} style={{ fontSize: 12.5, textAlign: "right" }}>{(v >= 0 ? "+" : "−") + "US$ " + fmt(Math.abs(v), 0)}</span>
+            </div>);
+        })}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="panel" style={{ padding: "18px 22px" }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Detalle del resultado</div>
+          {line("Resultado por tenencia", H.tenencia, "gain")}
+          {line("Cupones cobrados", H.cupones, "gain")}
+          {line("Dividendos cobrados", H.dividendos, "gain")}
+          {line("Ajustes", H.ajustes, "gain")}
+          {line("Gastos / comisiones", H.gastos, "loss")}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0 2px", marginTop: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Ganancia total</span>
+            <span className="mono gain" style={{ fontSize: 15, fontWeight: 600 }}>+US$ {fmt(ganancia, 0)}</span>
+          </div>
+        </div>
+        <div className="panel" style={{ padding: "18px 22px" }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Flujo de capital</div>
+          {line("Depósitos / suscripciones", H.depositos, "cel")}
+          {line("Extracciones / rescates", H.extracciones, "loss")}
+          {line("Títulos transferidos (recibidos)", H.transfRecibidos, "cel")}
+          {line("Títulos transferidos (enviados)", H.transfEnviados, "loss")}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0 2px", marginTop: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Capital neto</span>
+            <span className="mono cel" style={{ fontSize: 15, fontWeight: 600 }}>US$ {fmt(capitalNeto, 0)}</span>
+          </div>
+          <p className="muted" style={{ fontSize: 10.5, marginTop: 8, lineHeight: 1.6 }}>Los números en <span className="loss">rojo</span> son <strong>salidas</strong>, no pérdidas: plata o títulos que <strong>sacaste</strong> de Balanz (rescates {fmtUSD(Math.abs(H.extracciones))}, y títulos que enviaste a otro lado {fmtUSD(Math.abs(H.transfEnviados))} — probablemente a Allaria). Capital neto = lo que entró menos lo que salió = lo que realmente pusiste de tu bolsillo.</p>
+          <div style={{ marginTop: 14, padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--line)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Coins size={14} className="gold" /><span className="eyebrow">Resultado de trading</span></div>
+            <p className="muted" style={{ fontSize: 12, margin: "8px 0 0", lineHeight: 1.5 }}>Comprar y vender en el mercado te dejó <strong className={H.tradingNeto >= 0 ? "gain" : "loss"}>≈ {(H.tradingNeto >= 0 ? "+" : "−") + "US$ " + fmt(Math.abs(H.tradingNeto), 0)}</strong> (prácticamente cero). Tu ganancia viene de <strong>sostener</strong>, no de operar.</p>
+          </div>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 11, lineHeight: 1.5 }}><History size={11} style={{ verticalAlign: -1 }} /> Datos oficiales de la página "Evolución Histórica" de Balanz (USD). Corresponde solo a la cuenta de Balanz; Allaria y Nexo no exponen este desglose. El "Resultado por tenencia" incluye lo realizado y lo no realizado a lo largo de toda la vida de la cuenta — distinto del resultado no realizado sobre tus tenencias de hoy que ves en las otras pestañas.</p>
+    </div>
+  );
+}
+
+/* ============================== IA tab ============================== */
+function IA({ rows, totals, macro, pnlPct }) {
+  const [riskOut, setRiskOut] = useState(""); const [newsOut, setNewsOut] = useState("");
+  const [loadingR, setLoadingR] = useState(false); const [loadingN, setLoadingN] = useState(false);
+  const [errR, setErrR] = useState(""); const [errN, setErrN] = useState("");
+  const hasKeyVar = typeof window !== "undefined" && "__ANTHROPIC_KEY__" in window;
+  const [keyInput, setKeyInput] = useState((typeof window !== "undefined" && window.__ANTHROPIC_KEY__) || "");
+  const [keySaved, setKeySaved] = useState(!!(typeof window !== "undefined" && window.__ANTHROPIC_KEY__));
+  const saveKey = () => { if (typeof window !== "undefined") { window.__ANTHROPIC_KEY__ = keyInput.trim(); try { localStorage.setItem("ANTHROPIC_KEY", keyInput.trim()); } catch {} } setKeySaved(!!keyInput.trim()); };
+  const needKey = hasKeyVar && !keySaved; // estamos en HTML local sin key cargada
+  const portfolioStr = () => rows.map(r => `${r.ticker} (${CLASS_LABEL[r.cls]}): ${((r.m.valUSD / totals.valUSD) * 100).toFixed(1)}%, P&L USD ${fmtPct(r.m.pnlPctUSD)}`).join("; ");
+  const callClaude = async (prompt, search) => {
+    const body = { model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] };
+    if (search) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+    const headers = { "Content-Type": "application/json" };
+    const k = (typeof window !== "undefined") && window.__ANTHROPIC_KEY__;
+    if (k) { headers["x-api-key"] = k; headers["anthropic-version"] = "2023-06-01"; headers["anthropic-dangerous-direct-browser-access"] = "true"; }
+    const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body) });
+    if (res.status === 401 || res.status === 403) throw new Error("KEY");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || "API");
+    return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+  };
+  const errMsg = (e) => e && e.message === "KEY" ? "Tu API key falta o es inválida. Cargala arriba." : "Error al consultar la IA. Reintentá.";
+  const runRisk = async () => {
+    if (needKey) { setErrR("Pegá tu API key de Anthropic arriba para activar la IA."); return; }
+    setLoadingR(true); setErrR(""); setRiskOut("");
+    try {
+      const p = `Sos un analista de riesgo especializado en el mercado argentino. Analizá esta cartera y devolvé un análisis CONCISO y accionable en español rioplatense.
+CARTERA: ${portfolioStr()}
+Valor total: ${fmtUSD(totals.valUSD)} | Resultado: ${fmtPct(pnlPct)}
+Macro hoy: MEP $${macro.dolares?.bolsa?.venta || "?"}, CCL $${macro.dolares?.contadoconliqui?.venta || "?"}, Riesgo País ${macro.riesgo?.valor || "?"} pb.
+Buscá en la web el contexto MÁS ACTUAL de Argentina (cepo/BCRA, CNV, situación de los activos) y evaluá: 1) CONCENTRACIÓN 2) RIESGO CAMBIARIO 3) RIESGO SOBERANO/PAÍS 4) RIESGO REGULATORIO 5) LIQUIDEZ. Cerrá con NIVEL DE RIESGO GLOBAL (Bajo/Medio/Alto) y 3 acciones priorizadas. Viñetas con "-". Máx 350 palabras. No des consejo financiero personalizado, solo análisis de riesgo objetivo.`;
+      setRiskOut(await callClaude(p, true) || "No obtuve respuesta. Reintentá.");
+    } catch (e) { setErrR(errMsg(e)); } finally { setLoadingR(false); }
+  };
+  const runNews = async () => {
+    if (needKey) { setErrN("Pegá tu API key de Anthropic arriba para activar la IA."); return; }
+    setLoadingN(true); setErrN(""); setNewsOut("");
+    try {
+      const top = [...rows].sort((a, b) => b.m.valUSD - a.m.valUSD).slice(0, 6).map(r => r.ticker).join(", ");
+      const p = `Sos analista de mercado. Buscá en la web las noticias MÁS RECIENTES y relevantes (últimas semanas) que puedan mover el precio de estos activos de una cartera argentina: ${top}. Priorizá balances/resultados, cambios de management, M&A, decisiones regulatorias y macro argentina. Formato por activo, máx 2 ítems: **TICKER** luego "- [titular] — por qué importa". Omití los que no tengan novedades. Máx 350 palabras, con fechas.`;
+      setNewsOut(await callClaude(p, true) || "Sin noticias relevantes ahora. Reintentá.");
+    } catch (e) { setErrN(errMsg(e)); } finally { setLoadingN(false); }
+  };
+  const render = (txt) => txt.split("\n").map((line, i) => <div key={i} dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") }} style={{ marginBottom: line.trim() ? 3 : 8 }} />);
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {hasKeyVar && (
+        <div className="panel" style={{ padding: 16, border: needKey ? "1px solid #CBA45E66" : "1px solid var(--line)", background: needKey ? "rgba(203,164,94,.06)" : "var(--surface)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: needKey ? 8 : 0 }}>
+            <Brain size={15} className={keySaved ? "gain" : "gold"} />
+            <span className="eyebrow">{keySaved ? "IA activada en esta versión local" : "Activar IA — pegá tu API key de Anthropic"}</span>
+          </div>
+          {!keySaved && <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.55, marginBottom: 10 }}>El análisis con IA llama a la API de Anthropic. En esta versión local (HTML) necesita tu propia key (la guarda solo en este navegador, no se comparte). La sacás de console.anthropic.com → API Keys. Dentro de Claude no hace falta.</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input className="input mono" type="password" placeholder="sk-ant-..." value={keyInput} onChange={e => setKeyInput(e.target.value)} style={{ flex: 1 }} />
+            <button className="btn-accent btn" onClick={saveKey}>{keySaved ? "Actualizar" : "Activar"}</button>
+          </div>
+        </div>
+      )}
+      <div className="panel" style={{ padding: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ maxWidth: 560 }}><h3 style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><Brain size={18} className="cel" />Análisis de riesgo con IA</h3>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.55 }}>Claude lee tu cartera real y busca el contexto argentino del momento (cepo, BCRA, CNV, riesgo país) para evaluar concentración y riesgos cambiario, soberano, regulatorio y de liquidez.</p></div>
+          <button className="btn-accent btn" onClick={runRisk} disabled={loadingR}>{loadingR ? <Loader2 size={15} className="spin" /> : <Brain size={15} />}{loadingR ? "Analizando…" : "Analizar riesgo"}</button>
+        </div>
+        {errR && <div style={{ color: "var(--loss)", fontSize: 12.5, marginTop: 12 }}><AlertTriangle size={12} /> {errR}</div>}
+        {riskOut && <div className="ai-out" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>{render(riskOut)}</div>}
+      </div>
+      <div className="panel" style={{ padding: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ maxWidth: 560 }}><h3 style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><Newspaper size={18} className="gold" />Noticias que mueven tus activos</h3>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.55 }}>Búsqueda en vivo de balances, resultados, management y catalizadores macro para tus principales tenencias.</p></div>
+          <button className="btn" onClick={runNews} disabled={loadingN}>{loadingN ? <Loader2 size={15} className="spin" /> : <Newspaper size={15} />}{loadingN ? "Buscando…" : "Traer noticias"}</button>
+        </div>
+        {errN && <div style={{ color: "var(--loss)", fontSize: 12.5, marginTop: 12 }}><AlertTriangle size={12} /> {errN}</div>}
+        {newsOut && <div className="ai-out" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>{render(newsOut)}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== disclaimer ============================== */
+function Disclaimer() {
+  return (
+    <div style={{ marginTop: 30, padding: "16px 18px", border: "1px solid var(--line)", borderRadius: 12, background: "var(--surface)", display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <ShieldCheck size={16} className="cel" style={{ flexShrink: 0, marginTop: 2 }} />
+      <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.6, margin: 0 }}>
+        Herramienta de seguimiento y soporte a la decisión, de uso personal. No se conecta a tus cuentas de Allaria, Balanz ni Nexo, no guarda credenciales y no opera: vos cargás las posiciones. Los datos quedan en este navegador. El análisis con IA es objetivo y no constituye asesoramiento financiero personalizado. Verificá las cotizaciones en tu broker antes de operar.
+      </p>
+    </div>
+  );
+}
+
+
+import { createRoot } from "react-dom/client";
+const _b=document.getElementById("boot"); if(_b) _b.remove();
+createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

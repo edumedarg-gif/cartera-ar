@@ -1,0 +1,62 @@
+CARTERA·AR — Cómo subirla a internet (Vercel)
+==============================================
+
+Esta carpeta tiene 2 cosas:
+  - index.html        → tu app
+  - api/prices.js     → la función que trae los precios en vivo del mercado argentino
+
+IMPORTANTE: NO cambies la estructura. El archivo prices.js TIENE que quedar
+dentro de una carpeta llamada "api". Así Vercel lo reconoce como función.
+
+----------------------------------------------------------------
+PASOS (camino GitHub → Vercel, el mismo que usás con acedi-gestion)
+----------------------------------------------------------------
+
+1) Entrá a github.com (logueate con tu cuenta).
+
+2) Arriba a la derecha, tocá el "+" → "New repository".
+   - Repository name: cartera-ar
+   - Dejalo en "Public" (o Private, da igual).
+   - NO tildes nada más. Tocá "Create repository".
+
+3) En la página que aparece, tocá el link "uploading an existing file"
+   (o el botón "Add file" → "Upload files").
+
+4) Abrí esta carpeta en tu compu. Seleccioná TODO lo de adentro
+   (el index.html Y la carpeta api) y arrastralo a la ventana de GitHub.
+   - GitHub respeta la carpeta "api". Si ves que sube "api/prices.js", está bien.
+
+5) Abajo, tocá el botón verde "Commit changes".
+
+6) Entrá a vercel.com y logueate con tu cuenta de GitHub.
+
+7) Tocá "Add New..." → "Project".
+
+8) Buscá el repo "cartera-ar" en la lista y tocá "Import".
+
+9) NO toques ninguna configuración. Tocá directamente "Deploy".
+   (Esperá ~1 minuto.)
+
+10) Cuando termine, Vercel te da una dirección tipo:
+    https://cartera-ar.vercel.app
+    Esa es tu app, online. Abrila en la compu Y en el celular.
+
+----------------------------------------------------------------
+PARA QUE ANDEN LOS PRECIOS EN VIVO
+----------------------------------------------------------------
+
+Una vez abierta la app online, andá a la pestaña CARTERA y apretá "Actualizar".
+Los bonos, acciones y CEDEARs argentinos deberían pasar a mostrar el punto
+verde (precio en vivo).
+
+Si algún precio no entra, avisame y lo afinamos: la fuente de datos puede usar
+nombres de campo distintos a los que probé. La app NUNCA se rompe: si un precio
+no llega, queda el que tenías cargado.
+
+----------------------------------------------------------------
+NOTA SOBRE TUS DATOS
+----------------------------------------------------------------
+
+Por ahora tus datos (lo que cargues) siguen guardándose en el navegador donde
+abrís la app. Sincronizarlos entre compu y celular es el PASO 2 (Firebase),
+que hacemos después de confirmar que los precios en vivo funcionan.
