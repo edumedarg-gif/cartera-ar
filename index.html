@@ -150,7 +150,7 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      const hs = await storeGet("inv6_holdings", SEED_HOLDINGS);
+      const hs = await storeGet("inv7_holdings", SEED_HOLDINGS);
       setHoldings(hs.map(h => (h.isCash || h.ticker === "USD-BAL" || h.ticker === "USD-ALL") ? { ...h, cls: "EFECTIVO" } : h));
       setAportes(await storeGet("inv6_aportes", SEED_APORTES));
       setSettings(await storeGet("inv6_settings", { refDolar: "bolsa", baseCur: "USD", returns: { MERVAL: 18, CEDEAR: 12, BONO_CORP: 9, BONO_NAC: 11, FCI: 8, ACCION_INT: 10, ETF: 9, CRYPTO: 25 }, monthlyAporteUSD: 2000 }));
@@ -158,7 +158,7 @@ function App() {
       loaded.current = true;
     })();
   }, []);
-  useEffect(() => { if (loaded.current && holdings) storeSet("inv6_holdings", holdings); }, [holdings]);
+  useEffect(() => { if (loaded.current && holdings) storeSet("inv7_holdings", holdings); }, [holdings]);
   useEffect(() => { if (loaded.current && aportes) storeSet("inv6_aportes", aportes); }, [aportes]);
   useEffect(() => { if (loaded.current && settings) storeSet("inv6_settings", settings); }, [settings]);
   useEffect(() => { if (loaded.current) storeSet("inv6_history", history); }, [history]);
@@ -179,11 +179,21 @@ function App() {
       try {
         const pr = await fetch("/api/prices").then(r => r.ok ? r.json() : null);
         if (pr && typeof pr === "object" && Object.keys(pr).length) {
+          // auto-calibra la escala: data912 manda bonos ×100, etc. Elige la escala
+          // que más se acerca al precio ya cargado, y solo acepta si el movimiento es < 4x.
+          const fitScale = (cur, raw) => {
+            raw = +raw; cur = +cur;
+            if (!raw || raw <= 0 || !cur || cur <= 0) return null;
+            const cands = [raw, raw / 100, raw * 100, raw / 10, raw * 10, raw / 1000];
+            let best = null, br = Infinity;
+            for (const c of cands) { const r = Math.abs(Math.log(c / cur)); if (r < br) { br = r; best = c; } }
+            return (best && best / cur <= 4 && best / cur >= 0.25) ? best : null;
+          };
           setHoldings(hs => hs.map(h => {
             if (h.currency !== "ARS" || h.cls === "EFECTIVO" || h.cls === "FCI" || h.cls === "CRYPTO") return h;
             const key = (h.ticker || "").toUpperCase().replace(/-A$/, "");
-            const px = pr[key];
-            return (px && +px > 0) ? { ...h, manualPrice: +px, liveAt: new Date().toISOString() } : h;
+            const fitted = fitScale(h.manualPrice, pr[key]);
+            return fitted ? { ...h, manualPrice: fitted, liveAt: new Date().toISOString() } : h;
           }));
         }
       } catch { /* sin proxy (modo local): se mantienen los precios manuales */ }
