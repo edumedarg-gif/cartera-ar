@@ -1,8 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Cartera·AR — Cockpit de inversión</title>
 <style>html,body{margin:0;padding:0;background:#0D1318}#root{min-height:100vh}
 #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#74ACDF;font-family:system-ui;font-size:14px;background:#0D1318;z-index:9999}</style>
@@ -17,20 +14,14 @@ window.__ANTHROPIC_KEY__ = localStorage.getItem('ANTHROPIC_KEY') || '';
 </script>
 <script type="importmap">
 { "imports": {
-  "react": "https://esm.sh/react@18.3.1",
-  "react-dom": "https://esm.sh/react-dom@18.3.1",
-  "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-  "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+  "react": "https://esm.sh/react@18.3.1","react-dom": "https://esm.sh/react-dom@18.3.1",
+  "react-dom/client": "https://esm.sh/react-dom@18.3.1/client","react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
   "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
-  "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
-  "xlsx": "https://esm.sh/xlsx@0.18.5"
+  "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react","xlsx": "https://esm.sh/xlsx@0.18.5"
 } }
 </script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-</head>
-<body>
-<div id="boot">Cargando tu cartera…</div>
-<div id="root"></div>
+</head><body><div id="boot">Cargando tu cartera…</div><div id="root"></div>
 <script type="text/babel" data-type="module" data-presets="react">
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
@@ -115,6 +106,7 @@ const fmtUSD = (n) => "US$ " + fmt(n);
 const fmtARS = (n) => "$ " + fmt(n, 0);
 const fmtPct = (n) => (n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + fmt(n) + "%");
 const uid = () => Math.random().toString(36).slice(2, 9);
+const round2 = (n) => Math.round((+n || 0) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
 
 async function storeGet(key, def) { try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : def; } catch { return def; } }
@@ -133,6 +125,9 @@ const BAL_HIST = {
 };
 
 /* ===== Acumulación de tenencia cripto en Nexo (nominales por mes) ===== */
+/* ===== Operaciones reales reconstruidas de INVERSION.xlsx (2024-2026) ===== */
+const SEED_OPS = [{"date":"2024-01-19","broker":"BALANZ","activo":"AL30","montoARS":500000.0,"mep":1238.0,"usd":403.88},{"date":"2024-01-19","broker":"SATOSHI","activo":"BTC","montoARS":100000.0,"mep":null,"usd":null},{"date":"2024-01-29","broker":"BALANZ","activo":"AL30","montoARS":100000.0,"mep":1225.95,"usd":81.57},{"date":"2024-02-16","broker":"BALANZ","activo":"AL30","montoARS":150000.0,"mep":1063.68,"usd":141.02},{"date":"2024-02-20","broker":"BALANZ","activo":"AL30","montoARS":250000.0,"mep":1090.37,"usd":229.28},{"date":"2024-02-27","broker":"SATOSHI","activo":"BTC","montoARS":100000.0,"mep":null,"usd":null},{"date":"2024-02-27","broker":"BALANZ","activo":"AL30","montoARS":200000.0,"mep":1058.0,"usd":189.04},{"date":"2024-02-29","broker":"BALANZ","activo":"AL30","montoARS":200000.0,"mep":1043.96,"usd":191.58},{"date":"2024-03-08","broker":"BALANZ","activo":"AL30","montoARS":200000.0,"mep":1008.15,"usd":198.38},{"date":"2024-03-12","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":null,"usd":null},{"date":"2024-03-14","broker":"BALANZ","activo":"AL30","montoARS":400000.0,"mep":1032.06,"usd":387.57},{"date":"2024-03-19","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1038.0,"usd":192.68},{"date":"2024-03-25","broker":"BALANZ","activo":"AL30","montoARS":300000.0,"mep":1030.85,"usd":291.02},{"date":"2024-03-26","broker":"BALANZ","activo":"AL30","montoARS":400000.0,"mep":1028.0,"usd":389.11},{"date":"2024-03-26","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":null,"usd":null},{"date":"2024-04-02","broker":"SATOSHI","activo":"BTC","montoARS":100000.0,"mep":null,"usd":null},{"date":"2024-04-05","broker":"SATOSHI","activo":"BTC","montoARS":100000.0,"mep":null,"usd":null},{"date":"2024-04-15","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":null,"usd":null},{"date":"2024-04-18","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":null,"usd":null},{"date":"2024-04-19","broker":"LEMON","activo":"BTC","montoARS":100000.0,"mep":null,"usd":null},{"date":"2024-04-19","broker":"BALANZ","activo":"BYMA","montoARS":100000.0,"mep":1029.0,"usd":97.18},{"date":"2024-04-19","broker":"BALANZ","activo":"AL30","montoARS":400000.0,"mep":1029.0,"usd":388.73},{"date":"2024-04-24","broker":"LEMON","activo":"BTC","montoARS":100000.0,"mep":1045.57,"usd":95.64},{"date":"2024-04-24","broker":"BALANZ","activo":"MIRG","montoARS":124645.0,"mep":1018.34,"usd":122.4},{"date":"2024-04-24","broker":"BALANZ","activo":"AL30","montoARS":276504.0,"mep":1018.34,"usd":271.52},{"date":"2024-04-25","broker":"LEMON","activo":"BTC","montoARS":150000.0,"mep":1070.0,"usd":140.19},{"date":"2024-04-30","broker":"SATOSHI","activo":"BTC","montoARS":100000.0,"mep":1090.19,"usd":91.73},{"date":"2024-05-16","broker":"BALANZ","activo":"AL30","montoARS":300000.0,"mep":1064.21,"usd":281.9},{"date":"2024-05-23","broker":"BALANZ","activo":"BYMA","montoARS":150000.0,"mep":1261.81,"usd":118.88},{"date":"2024-05-23","broker":"BALANZ","activo":"AL30","montoARS":352695.0,"mep":1261.81,"usd":279.52},{"date":"2024-05-28","broker":"BALANZ","activo":"AL30","montoARS":496411.0,"mep":1210.39,"usd":410.12},{"date":"2024-05-28","broker":"BALANZ","activo":"BYMA","montoARS":2947.0,"mep":1210.39,"usd":2.43},{"date":"2024-05-28","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1242.0,"usd":161.03},{"date":"2024-06-10","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1306.89,"usd":153.04},{"date":"2024-06-14","broker":"BALANZ","activo":"AL30","montoARS":197449.0,"mep":1251.77,"usd":157.74},{"date":"2024-06-14","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1294.88,"usd":154.45},{"date":"2024-06-18","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1321.05,"usd":151.39},{"date":"2024-06-19","broker":"BALANZ","activo":"SPY","montoARS":211740.0,"mep":1278.33,"usd":165.64},{"date":"2024-06-19","broker":"BALANZ","activo":"AL30","montoARS":86751.29,"mep":1278.33,"usd":67.86},{"date":"2024-06-24","broker":"SATOSHI","activo":"BTC","montoARS":300000.0,"mep":1348.63,"usd":222.45},{"date":"2024-06-25","broker":"BALANZ","activo":"AL30","montoARS":800000.0,"mep":1313.53,"usd":609.05},{"date":"2024-07-06","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1433.29,"usd":139.54},{"date":"2024-07-15","broker":"BALANZ","activo":"AL30","montoARS":600000.0,"mep":1316.96,"usd":455.59},{"date":"2024-07-22","broker":"BALANZ","activo":"AL30","montoARS":596352.0,"mep":1348.03,"usd":442.39},{"date":"2024-07-24","broker":"BALANZ","activo":"SPY","montoARS":218700.0,"mep":1347.63,"usd":162.28},{"date":"2024-07-24","broker":"BALANZ","activo":"AL30","montoARS":477675.0,"mep":null,"usd":null},{"date":"2024-07-30","broker":"BALANZ","activo":"AL30","montoARS":499847.55,"mep":1291.4,"usd":387.06},{"date":"2024-08-06","broker":"SATOSHI","activo":"BTC","montoARS":300000.0,"mep":1383.98,"usd":216.77},{"date":"2024-08-15","broker":"BALANZ","activo":"SPY","montoARS":244650.0,"mep":1279.08,"usd":191.27},{"date":"2024-08-15","broker":"BALANZ","activo":"GOOGL","montoARS":246050.0,"mep":null,"usd":null},{"date":"2024-08-15","broker":"BALANZ","activo":"MELI","montoARS":254100.0,"mep":1291.91,"usd":196.69},{"date":"2024-08-15","broker":"BALANZ","activo":"AL30","montoARS":244474.0,"mep":null,"usd":null},{"date":"2024-08-21","broker":"BALANZ","activo":"AL30","montoARS":199000.0,"mep":1302.41,"usd":152.79},{"date":"2024-08-27","broker":"SATOSHI","activo":"BTC","montoARS":200000.0,"mep":1321.37,"usd":151.36},{"date":"2024-09-12","broker":"BALANZ","activo":"BRKB","montoARS":206400.0,"mep":1248.0,"usd":165.38},{"date":"2024-09-12","broker":"BALANZ","activo":"SPY","montoARS":210900.0,"mep":1248.0,"usd":168.99},{"date":"2024-09-12","broker":"BALANZ","activo":"GD30","montoARS":376479.0,"mep":1248.0,"usd":301.67},{"date":"2024-09-17","broker":"BALANZ","activo":"GD30","montoARS":397686.0,"mep":1229.92,"usd":323.34},{"date":"2024-10-03","broker":"SATOSHI","activo":"BTC","montoARS":485890.0,"mep":1227.0,"usd":396.0},{"date":"2024-10-03","broker":"BALANZ","activo":"KO","montoARS":190850.0,"mep":1203.0,"usd":158.65},{"date":"2024-10-03","broker":"BALANZ","activo":"GOOGL","montoARS":176000.0,"mep":1203.0,"usd":146.3},{"date":"2024-10-03","broker":"BALANZ","activo":"SPY","montoARS":174500.0,"mep":1203.0,"usd":145.05},{"date":"2024-10-03","broker":"BALANZ","activo":"GD30","montoARS":447184.0,"mep":1203.0,"usd":371.72},{"date":"2024-10-03","broker":"BALANZ","activo":"AL30","montoARS":498999.0,"mep":1203.0,"usd":414.8},{"date":"2024-10-15","broker":"SATOSHI","activo":"BTC","montoARS":1000000.0,"mep":1206.97,"usd":828.52},{"date":"2024-10-16","broker":"BALANZ","activo":"MIRG","montoARS":329625.0,"mep":1162.77,"usd":283.48},{"date":"2024-10-16","broker":"BALANZ","activo":"BRKB","montoARS":250500.0,"mep":1162.77,"usd":215.43},{"date":"2024-10-16","broker":"BALANZ","activo":"GD30","montoARS":378252.0,"mep":1162.77,"usd":325.3},{"date":"2024-10-16","broker":"BALANZ","activo":"GOOGL","montoARS":33700.0,"mep":1162.77,"usd":28.98},{"date":"2024-10-29","broker":"BALANZ","activo":"GGAL","montoARS":398160.0,"mep":1139.64,"usd":349.37},{"date":"2024-10-30","broker":"SATOSHI","activo":"BTC","montoARS":667398.0,"mep":1173.03,"usd":568.95},{"date":"2024-11-14","broker":"BALANZ","activo":"GD30","montoARS":493287.0,"mep":1127.45,"usd":437.52},{"date":"2024-11-21","broker":"BALANZ","activo":"GD30","montoARS":496721.0,"mep":1086.83,"usd":457.04},{"date":"2024-11-21","broker":"SATOSHI","activo":"BTC","montoARS":952644.0,"mep":1143.0,"usd":833.46},{"date":"2024-11-22","broker":"BALANZ","activo":"GD30","montoARS":468958.0,"mep":1096.19,"usd":427.81},{"date":"2024-11-22","broker":"BALANZ","activo":"GGAL","montoARS":30500.0,"mep":1096.19,"usd":27.82},{"date":"2024-11-28","broker":"BALANZ","activo":"GD30","montoARS":396071.0,"mep":1085.69,"usd":364.81},{"date":"2024-11-28","broker":"SATOSHI","activo":"BTC","montoARS":477250.0,"mep":1123.54,"usd":424.77},{"date":"2024-12-13","broker":"BALANZ","activo":"SPY","montoARS":490875.0,"mep":1072.3,"usd":457.78},{"date":"2024-12-13","broker":"BALANZ","activo":"GD30","montoARS":501376.0,"mep":1072.3,"usd":467.57},{"date":"2024-12-18","broker":"SATOSHI","activo":"BTC","montoARS":952414.0,"mep":1224.0,"usd":778.12},{"date":"2024-12-27","broker":"BALANZ","activo":"GGAL","montoARS":487040.0,"mep":1177.12,"usd":413.76},{"date":"2025-01-08","broker":"BALANZ","activo":"AL30","montoARS":493672.4,"mep":1238.0,"usd":398.77},{"date":"2025-01-08","broker":"BALANZ","activo":"BYMA","montoARS":4048.0,"mep":1184.34,"usd":3.42},{"date":"2025-01-11","broker":"SATOSHI","activo":"BTC","montoARS":1000000.0,"mep":1235.43,"usd":809.43},{"date":"2025-01-13","broker":"BALANZ","activo":"XLF","montoARS":199325.0,"mep":1177.84,"usd":169.23},{"date":"2025-01-13","broker":"BALANZ","activo":"LOMA","montoARS":299125.0,"mep":null,"usd":null},{"date":"2025-01-27","broker":"SATOSHI","activo":"BTC","montoARS":957606.0,"mep":1214.33,"usd":788.59},{"date":"2025-02-14","broker":"BALANZ","activo":"XLF","montoARS":248600.0,"mep":1199.07,"usd":207.33},{"date":"2025-02-14","broker":"BALANZ","activo":"MELI","montoARS":244200.0,"mep":null,"usd":null},{"date":"2025-02-14","broker":"BALANZ","activo":"GD30","montoARS":495141.0,"mep":null,"usd":null},{"date":"2025-02-14","broker":"SATOSHI","activo":"BTC","montoARS":957064.0,"mep":1224.0,"usd":781.92},{"date":"2025-02-25","broker":"SATOSHI","activo":"BTC","montoARS":958685.0,"mep":1242.44,"usd":771.61},{"date":"2025-02-26","broker":"BALANZ","activo":"BYMA","montoARS":197449.0,"mep":1220.46,"usd":161.78},{"date":"2025-02-26","broker":"BALANZ","activo":"GGAL","montoARS":194400.0,"mep":null,"usd":null},{"date":"2025-02-26","broker":"BALANZ","activo":"GD30","montoARS":403558.0,"mep":null,"usd":null},{"date":"2025-02-26","broker":"BALANZ","activo":"AL30","montoARS":2337.0,"mep":null,"usd":null},{"date":"2025-03-09","broker":"SATOSHI","activo":"BTC","montoARS":958916.0,"mep":1244.0,"usd":770.83},{"date":"2025-03-10","broker":"BALANZ","activo":"BYMA","montoARS":196582.0,"mep":1223.72,"usd":160.64},{"date":"2025-03-10","broker":"BALANZ","activo":"GD30","montoARS":591822.0,"mep":null,"usd":null},{"date":"2025-03-10","broker":"BALANZ","activo":"AL30","montoARS":6398.0,"mep":null,"usd":null},{"date":"2025-03-17","broker":"BALANZ","activo":"MIRG","montoARS":218200.0,"mep":1248.09,"usd":174.83},{"date":"2025-03-17","broker":"BALANZ","activo":"GD30","montoARS":765772.0,"mep":null,"usd":null},{"date":"2025-03-17","broker":"BALANZ","activo":"AL30","montoARS":9620.0,"mep":null,"usd":null},{"date":"2025-03-17","broker":"SATOSHI","activo":"BTC","montoARS":957853.0,"mep":1261.0,"usd":759.6},{"date":"2025-03-20","broker":"BALANZ","activo":"GD30","montoARS":993000.0,"mep":1279.68,"usd":775.98},{"date":"2025-03-28","broker":"BALANZ","activo":"GD30","montoARS":930050.0,"mep":1302.08,"usd":714.28},{"date":"2025-03-28","broker":"BALANZ","activo":"AL30","montoARS":63361.0,"mep":null,"usd":null},{"date":"2025-03-28","broker":"SATOSHI","activo":"BTC","montoARS":957519.0,"mep":1323.81,"usd":723.31},{"date":"2025-04-09","broker":"SATOSHI","activo":"BTC","montoARS":969345.0,"mep":1384.0,"usd":700.39},{"date":"2025-04-10","broker":"BALANZ","activo":"GD30","montoARS":982874.0,"mep":1366.0,"usd":719.53},{"date":"2025-04-10","broker":"BALANZ","activo":"BYMA","montoARS":10568.0,"mep":null,"usd":null},{"date":"2025-04-21","broker":"BALANZ","activo":"GD30","montoARS":971620.0,"mep":1101.91,"usd":881.76},{"date":"2025-04-21","broker":"BALANZ","activo":"BYMA","montoARS":21888.0,"mep":null,"usd":null},{"date":"2025-04-21","broker":"SATOSHI","activo":"BTC","montoARS":967746.0,"mep":1138.69,"usd":849.88},{"date":"2025-04-29","broker":"BALANZ","activo":"GD30","montoARS":589742.0,"mep":1174.25,"usd":502.23},{"date":"2025-05-20","broker":"SATOSHI","activo":"BTC","montoARS":968211.0,"mep":1172.0,"usd":826.12},{"date":"2025-05-20","broker":"BALANZ","activo":"GD41","montoARS":981581.0,"mep":1148.0,"usd":855.04},{"date":"2025-05-20","broker":"BALANZ","activo":"BRKB","montoARS":324900.0,"mep":null,"usd":null},{"date":"2025-05-20","broker":"BALANZ","activo":"KO","montoARS":370150.0,"mep":null,"usd":null},{"date":"2025-05-20","broker":"BALANZ","activo":"BYMA","montoARS":335242.0,"mep":null,"usd":null},{"date":"2025-06-12","broker":"SATOSHI","activo":"BTC","montoARS":970287.0,"mep":1205.23,"usd":805.06},{"date":"2025-06-17","broker":"BALANZ","activo":"MELI","montoARS":286500.0,"mep":1181.79,"usd":242.43},{"date":"2025-06-17","broker":"BALANZ","activo":"GD41","montoARS":698536.0,"mep":null,"usd":null},{"date":"2025-06-17","broker":"BALANZ","activo":"BYMA","montoARS":8397.0,"mep":null,"usd":null},{"date":"2025-06-23","broker":"SATOSHI","activo":"BTC","montoARS":1261308.0,"mep":1210.0,"usd":1042.4},{"date":"2025-06-30","broker":"BALANZ","activo":"XLF","montoARS":314000.0,"mep":1197.0,"usd":262.32},{"date":"2025-06-30","broker":"BALANZ","activo":"GD30","montoARS":682489.0,"mep":null,"usd":null},{"date":"2025-06-30","broker":"BALANZ","activo":"BYMA","montoARS":7900.0,"mep":null,"usd":null},{"date":"2025-07-04","broker":"BALANZ","activo":"GD30","montoARS":687123.0,"mep":1244.0,"usd":552.35},{"date":"2025-07-04","broker":"BALANZ","activo":"BYMA","montoARS":8495.0,"mep":null,"usd":null},{"date":"2025-07-14","broker":"SATOSHI","activo":"BTC","montoARS":1940391.0,"mep":1315.64,"usd":1474.86},{"date":"2025-07-16","broker":"BALANZ","activo":"NVDA","montoARS":496650.0,"mep":1267.22,"usd":391.92},{"date":"2025-07-16","broker":"BALANZ","activo":"GD41","montoARS":12969.0,"mep":null,"usd":null},{"date":"2025-07-17","broker":"SATOSHI","activo":"BTC","montoARS":969730.0,"mep":1290.53,"usd":751.42},{"date":"2025-07-22","broker":"SATOSHI","activo":"BTC","montoARS":970349.0,"mep":1298.27,"usd":747.42},{"date":"2025-07-25","broker":"BALANZ","activo":"NVDA","montoARS":466500.0,"mep":1273.77,"usd":366.24},{"date":"2025-07-25","broker":"BALANZ","activo":"GD41","montoARS":28022.0,"mep":null,"usd":null},{"date":"2025-07-30","broker":"SATOSHI","activo":"BTC","montoARS":970544.0,"mep":1320.95,"usd":734.73},{"date":"2025-08-11","broker":"SATOSHI","activo":"BTC","montoARS":970463.0,"mep":1341.71,"usd":723.3},{"date":"2025-08-13","broker":"BALANZ","activo":"NVDA","montoARS":502500.0,"mep":1324.04,"usd":379.52},{"date":"2025-08-13","broker":"BALANZ","activo":"GD30","montoARS":249156.0,"mep":null,"usd":null},{"date":"2025-08-13","broker":"BALANZ","activo":"GD41","montoARS":239378.0,"mep":null,"usd":null},{"date":"2025-08-13","broker":"SATOSHI","activo":"BTC","montoARS":970462.0,"mep":1335.41,"usd":726.71},{"date":"2025-08-18","broker":"BALANZ","activo":"SPY","montoARS":209125.0,"mep":1296.1,"usd":161.35},{"date":"2025-08-18","broker":"BALANZ","activo":"XLF","montoARS":282800.0,"mep":null,"usd":null},{"date":"2025-08-25","broker":"BALANZ","activo":"NVDA","montoARS":195700.0,"mep":1356.44,"usd":144.27},{"date":"2025-08-25","broker":"BALANZ","activo":"MELI","montoARS":190400.0,"mep":null,"usd":null},{"date":"2025-08-25","broker":"BALANZ","activo":"GOOGL","montoARS":205380.0,"mep":null,"usd":null},{"date":"2025-08-25","broker":"SATOSHI","activo":"BTC","montoARS":970854.0,"mep":1367.16,"usd":710.12},{"date":"2025-08-30","broker":"SATOSHI","activo":"BTC","montoARS":970020.0,"mep":1373.75,"usd":706.11},{"date":"2025-09-13","broker":"SATOSHI","activo":"BTC","montoARS":1447409.0,"mep":1477.69,"usd":979.51},{"date":"2025-09-16","broker":"SATOSHI","activo":"BTC","montoARS":1445599.0,"mep":1497.18,"usd":965.55},{"date":"2025-09-22","broker":"SATOSHI","activo":"BTC","montoARS":1454734.0,"mep":1570.39,"usd":926.35},{"date":"2025-09-22","broker":"BALANZ","activo":"GOOGL","montoARS":248800.0,"mep":1427.56,"usd":174.28},{"date":"2025-09-22","broker":"BALANZ","activo":"MELI","montoARS":264600.0,"mep":1427.56,"usd":185.35},{"date":"2025-09-22","broker":"BALANZ","activo":"SPY","montoARS":479400.0,"mep":1427.56,"usd":335.82},{"date":"2025-09-22","broker":"BALANZ","activo":"GD30","montoARS":13056.0,"mep":1427.56,"usd":9.15},{"date":"2025-09-29","broker":"SATOSHI","activo":"BTC","montoARS":968250.0,"mep":1469.88,"usd":658.73},{"date":"2025-10-10","broker":"SATOSHI","activo":"BTC","montoARS":1938972.0,"mep":1531.8,"usd":1265.81},{"date":"2025-10-17","broker":"SATOSHI","activo":"BTC","montoARS":1935241.0,"mep":1508.3,"usd":1283.06},{"date":"2025-10-20","broker":"SATOSHI","activo":"USDT","montoARS":1374667.0,"mep":1556.28,"usd":883.3},{"date":"2025-10-21","broker":"SATOSHI","activo":"USDT","montoARS":883841.0,"mep":1561.64,"usd":565.97},{"date":"2025-10-24","broker":"SATOSHI","activo":"USDT","montoARS":981981.77,"mep":1553.08,"usd":632.28},{"date":"2025-11-14","broker":"SATOSHI","activo":"BTC","montoARS":1935442.0,"mep":1486.09,"usd":1302.37},{"date":"2025-11-19","broker":"SATOSHI","activo":"BTC","montoARS":1936034.0,"mep":1496.86,"usd":1293.4},{"date":"2025-11-20","broker":"BALANZ","activo":"NVDA","montoARS":480800.0,"mep":1444.0,"usd":332.96},{"date":"2025-11-20","broker":"BALANZ","activo":"GD41","montoARS":196416.0,"mep":1444.0,"usd":136.02},{"date":"2025-11-20","broker":"BALANZ","activo":"GD30","montoARS":317258.0,"mep":1444.0,"usd":219.71},{"date":"2025-11-24","broker":"SATOSHI","activo":"BTC","montoARS":1936523.0,"mep":1518.86,"usd":1274.98},{"date":"2025-12-16","broker":"SATOSHI","activo":"BTC","montoARS":1937155.0,"mep":1549.61,"usd":1250.09},{"date":"2025-12-24","broker":"SATOSHI","activo":"BTC","montoARS":1953336.0,"mep":1563.43,"usd":1249.39},{"date":"2026-01-15","broker":"SATOSHI","activo":"USDT","montoARS":1472831.0,"mep":1553.15,"usd":948.29},{"date":"2026-02-20","broker":"BALANZ","activo":"SPY","montoARS":249100.0,"mep":1404.0,"usd":177.42},{"date":"2026-02-20","broker":"BALANZ","activo":"GOOGL","montoARS":236400.0,"mep":null,"usd":null},{"date":"2026-02-20","broker":"SATOSHI","activo":"USDT","montoARS":1500000.0,"mep":null,"usd":null},{"date":"2026-03-13","broker":"SATOSHI","activo":"USDT","montoARS":1600000.0,"mep":65672.0,"usd":24.36},{"date":"2026-03-25","broker":"SATOSHI","activo":"USDT","montoARS":1600000.0,"mep":65672.0,"usd":24.36},{"date":"2026-03-30","broker":"BALANZ","activo":"SPY","montoARS":470600.0,"mep":null,"usd":null},{"date":"2026-04-16","broker":"SATOSHI","activo":"USDT","montoARS":1592000.0,"mep":null,"usd":null},{"date":"2026-04-16","broker":"BALANZ","activo":"SPY","montoARS":458100.0,"mep":null,"usd":null},{"date":"2026-04-24","broker":"BALANZ","activo":"SPY","montoARS":105950.0,"mep":null,"usd":null},{"date":"2026-04-24","broker":"BALANZ","activo":"GOOGL","montoARS":381260.0,"mep":null,"usd":null},{"date":"2026-04-24","broker":"BALANZ","activo":"GD30","montoARS":9201.0,"mep":null,"usd":null},{"date":"2026-05-08","broker":"BALANZ","activo":"SPY","montoARS":438400.0,"mep":null,"usd":null},{"date":"2026-05-08","broker":"BALANZ","activo":"GD41","montoARS":55676.0,"mep":null,"usd":null},{"date":"2026-05-26","broker":"SATOSHI","activo":"USDT","montoARS":1510455.0,"mep":null,"usd":null},{"date":"2026-05-26","broker":"BALANZ","activo":"CVX","montoARS":257400.0,"mep":null,"usd":null},{"date":"2026-05-26","broker":"BALANZ","activo":"XLF","montoARS":231720.0,"mep":null,"usd":null},{"date":"2026-06-04","broker":"SATOSHI","activo":"USDT","montoARS":2000000.0,"mep":null,"usd":null},{"date":"2026-06-12","broker":"BALANZ","activo":"KO","montoARS":367800.0,"mep":null,"usd":null},{"date":"2026-06-12","broker":"BALANZ","activo":"SPY","montoARS":462000.0,"mep":null,"usd":null},{"date":"2026-06-12","broker":"BALANZ","activo":"GD41","montoARS":158494.0,"mep":null,"usd":null}];
+
 const NEXO_ACCUM = {"BTC":[{"date":"2022-04","qty":0.0},{"date":"2022-05","qty":0.0},{"date":"2022-06","qty":0.0},{"date":"2022-07","qty":0.00597196},{"date":"2022-08","qty":0.00598684},{"date":"2022-09","qty":0.00600124},{"date":"2022-10","qty":0.00601612},{"date":"2022-11","qty":0.00603052},{"date":"2022-12","qty":0.0060454},{"date":"2023-01","qty":0.00606051},{"date":"2023-02","qty":0.00607423},{"date":"2023-03","qty":0.00608942},{"date":"2023-04","qty":0.00610412},{"date":"2023-05","qty":0.00611931},{"date":"2023-06","qty":0.00613401},{"date":"2023-07","qty":0.0061492},{"date":"2023-08","qty":0.00616439},{"date":"2023-09","qty":0.00617924},{"date":"2023-10","qty":0.00619474},{"date":"2023-11","qty":0.00620974},{"date":"2023-12","qty":0.00622524},{"date":"2024-01","qty":0.00624074},{"date":"2024-02","qty":0.00625524},{"date":"2024-03","qty":0.00627074},{"date":"2024-04","qty":0.00628574},{"date":"2024-05","qty":0.00630136},{"date":"2024-06","qty":0.00631666},{"date":"2024-07","qty":0.00633247},{"date":"2024-08","qty":0.00634828},{"date":"2024-09","qty":0.00636358},{"date":"2024-10","qty":0.00637939},{"date":"2024-11","qty":0.00639469},{"date":"2024-12","qty":0.0064105},{"date":"2025-01","qty":0.00642645},{"date":"2025-02","qty":0.00643789},{"date":"2025-10","qty":0.01880075},{"date":"2025-11","qty":0.06158845},{"date":"2025-12","qty":0.09096722},{"date":"2026-01","qty":0.14730163},{"date":"2026-02","qty":0.16279429},{"date":"2026-03","qty":0.19479519},{"date":"2026-04","qty":0.19506347},{"date":"2026-05","qty":0.22227283},{"date":"2026-06","qty":0.24216956}],"ETH":[{"date":"2022-04","qty":0.0},{"date":"2022-05","qty":0.05314823},{"date":"2022-06","qty":0.05331968},{"date":"2022-07","qty":0.05349744},{"date":"2022-08","qty":0.0536758},{"date":"2022-09","qty":0.05384896},{"date":"2022-10","qty":0.05402848},{"date":"2022-11","qty":0.05420278},{"date":"2022-12","qty":0.05438348},{"date":"2023-01","qty":0.05456478},{"date":"2023-02","qty":0.05472905},{"date":"2023-03","qty":0.05491151},{"date":"2023-04","qty":0.05508866},{"date":"2023-05","qty":0.05527233},{"date":"2023-06","qty":0.05545065},{"date":"2023-07","qty":0.05563552},{"date":"2023-08","qty":0.05582101},{"date":"2023-09","qty":0.05600111},{"date":"2023-10","qty":0.05618782},{"date":"2023-11","qty":0.0563691},{"date":"2023-12","qty":0.05655704},{"date":"2024-01","qty":0.0567456},{"date":"2024-02","qty":0.05692258},{"date":"2024-03","qty":0.05711236},{"date":"2024-04","qty":0.05729663},{"date":"2024-05","qty":0.05748767},{"date":"2024-06","qty":0.05767315},{"date":"2024-07","qty":0.05786543},{"date":"2024-08","qty":0.05805836},{"date":"2024-09","qty":0.05824569},{"date":"2024-10","qty":0.05843989},{"date":"2024-11","qty":0.05862845},{"date":"2024-12","qty":0.05882394},{"date":"2025-01","qty":0.05902008},{"date":"2025-02","qty":0.05915967},{"date":"2025-10","qty":0.05915967},{"date":"2025-11","qty":0.05915967},{"date":"2025-12","qty":0.05915967},{"date":"2026-01","qty":0.05915967},{"date":"2026-02","qty":0.05915967},{"date":"2026-03","qty":0.05917723},{"date":"2026-04","qty":0.05929773},{"date":"2026-05","qty":0.05940973},{"date":"2026-06","qty":0.05946041}],"NEXO":[{"date":"2022-04","qty":0.0},{"date":"2022-05","qty":0.0},{"date":"2022-06","qty":0.0},{"date":"2022-07","qty":0.0},{"date":"2022-08","qty":0.0},{"date":"2022-09","qty":0.0},{"date":"2022-10","qty":0.0},{"date":"2022-11","qty":0.0},{"date":"2022-12","qty":0.0},{"date":"2023-01","qty":0.0},{"date":"2023-02","qty":0.0},{"date":"2023-03","qty":0.0},{"date":"2023-04","qty":0.0},{"date":"2023-05","qty":0.0},{"date":"2023-06","qty":0.0},{"date":"2023-07","qty":0.0},{"date":"2023-08","qty":0.0},{"date":"2023-09","qty":0.0},{"date":"2023-10","qty":0.0},{"date":"2023-11","qty":0.0},{"date":"2023-12","qty":0.0},{"date":"2024-01","qty":0.0},{"date":"2024-02","qty":0.0},{"date":"2024-03","qty":0.0},{"date":"2024-04","qty":0.0},{"date":"2024-05","qty":0.0},{"date":"2024-06","qty":0.0},{"date":"2024-07","qty":0.0},{"date":"2024-08","qty":0.0},{"date":"2024-09","qty":0.0},{"date":"2024-10","qty":0.0},{"date":"2024-11","qty":0.0},{"date":"2024-12","qty":0.0},{"date":"2025-01","qty":0.0},{"date":"2025-02","qty":0.0},{"date":"2025-10","qty":8.87785315},{"date":"2025-11","qty":40.97472322},{"date":"2025-12","qty":76.55650262},{"date":"2026-01","qty":118.15090928},{"date":"2026-02","qty":141.03394506},{"date":"2026-03","qty":167.27570124},{"date":"2026-04","qty":167.6825894},{"date":"2026-05","qty":168.10408029},{"date":"2026-06","qty":168.29477815}]};
 
 /* ============================== app ============================== */
@@ -140,6 +135,7 @@ function App() {
   const [tab, setTab] = useState("cartera");
   const [holdings, setHoldings] = useState(null);
   const [aportes, setAportes] = useState(null);
+  const [ops, setOps] = useState(null);
   const [settings, setSettings] = useState(null);
   const [history, setHistory] = useState([]);
   const [macro, setMacro] = useState({ dolares: null, riesgo: null, updated: null });
@@ -153,6 +149,7 @@ function App() {
       const hs = await storeGet("inv7_holdings", SEED_HOLDINGS);
       setHoldings(hs.map(h => (h.isCash || h.ticker === "USD-BAL" || h.ticker === "USD-ALL") ? { ...h, cls: "EFECTIVO" } : h));
       setAportes(await storeGet("inv6_aportes", SEED_APORTES));
+      setOps(await storeGet("inv7_ops", SEED_OPS));
       setSettings(await storeGet("inv6_settings", { refDolar: "bolsa", baseCur: "USD", returns: { MERVAL: 18, CEDEAR: 12, BONO_CORP: 9, BONO_NAC: 11, FCI: 8, ACCION_INT: 10, ETF: 9, CRYPTO: 25 }, monthlyAporteUSD: 2000 }));
       setHistory(await storeGet("inv6_history", []));
       loaded.current = true;
@@ -160,6 +157,7 @@ function App() {
   }, []);
   useEffect(() => { if (loaded.current && holdings) storeSet("inv7_holdings", holdings); }, [holdings]);
   useEffect(() => { if (loaded.current && aportes) storeSet("inv6_aportes", aportes); }, [aportes]);
+  useEffect(() => { if (loaded.current && ops) storeSet("inv7_ops", ops); }, [ops]);
   useEffect(() => { if (loaded.current && settings) storeSet("inv6_settings", settings); }, [settings]);
   useEffect(() => { if (loaded.current) storeSet("inv6_history", history); }, [history]);
 
@@ -179,6 +177,8 @@ function App() {
       try {
         const pr = await fetch("/api/prices").then(r => r.ok ? r.json() : null);
         if (pr && typeof pr === "object" && Object.keys(pr).length) {
+          // MEP fresco para convertir ARS->USD en activos cotizados en dólares (Allaria)
+          const mep = (() => { const dd = dolares || macro.dolares; const c = dd && dd.bolsa; return (c && (c.venta || c.compra)) || 0; })();
           // auto-calibra la escala: data912 manda bonos ×100, etc. Elige la escala
           // que más se acerca al precio ya cargado, y solo acepta si el movimiento es < 4x.
           const fitScale = (cur, raw) => {
@@ -190,9 +190,18 @@ function App() {
             return (best && best / cur <= 4 && best / cur >= 0.25) ? best : null;
           };
           setHoldings(hs => hs.map(h => {
-            if (h.currency !== "ARS" || h.cls === "EFECTIVO" || h.cls === "FCI" || h.cls === "CRYPTO") return h;
+            if (h.cls === "EFECTIVO" || h.cls === "FCI" || h.cls === "CRYPTO") return h;
             const key = (h.ticker || "").toUpperCase().replace(/-A$/, "");
-            const fitted = fitScale(h.manualPrice, pr[key]);
+            const rawARS = +pr[key];
+            if (!rawARS || rawARS <= 0) return h;
+            // el precio de mercado viene en ARS; si la tenencia está en USD, lo paso a USD.
+            // uso el MEP en vivo si está; si no, el tipo de cambio implícito en el costo de la tenencia.
+            let toNative = 1;
+            if (h.currency === "USD") {
+              toNative = mep || ((+h.investedARS && +h.investedUSD) ? (+h.investedARS / +h.investedUSD) : 1452);
+            }
+            const rawNative = rawARS / toNative;
+            const fitted = fitScale(h.manualPrice, rawNative);
             return fitted ? { ...h, manualPrice: fitted, liveAt: new Date().toISOString() } : h;
           }));
         }
@@ -301,7 +310,7 @@ function App() {
         {tab === "cartera" && <Cartera rows={rows} setHoldings={setHoldings} base={base} money={money} refRate={refRate} />}
         {tab === "ritmo" && <Ritmo rate={rate} totals={totals} pnlUSD={pnlUSD} refRate={refRate} />}
         {tab === "evolucion" && <Evolucion rows={rows} history={history} totals={totals} base={base} money={money} refRate={refRate} />}
-        {tab === "aportes" && <Aportes aportes={aportes} setAportes={setAportes} aportesUSD={aportesUSD} valUSD={totals.valUSD} setHoldings={setHoldings} refRate={refRate} />}
+        {tab === "aportes" && <Aportes aportes={aportes} setAportes={setAportes} aportesUSD={aportesUSD} valUSD={totals.valUSD} setHoldings={setHoldings} refRate={refRate} ops={ops} setOps={setOps} />}
         {tab === "proyeccion" && <Proyeccion rows={rows} settings={settings} setSettings={setSettings} classStats={classStats} />}
         {tab === "historico" && <Historico />}
         {tab === "ia" && <IA rows={rows} totals={totals} macro={macro} pnlPct={pnlPct} />}
@@ -818,7 +827,8 @@ function Evolucion({ rows, history, totals, base, money, refRate }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div className="panel" style={{ padding: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>Composición por clase</div>
+          <div className="eyebrow" style={{ marginBottom: 2 }}>Composición por clase</div>
+          <p className="muted" style={{ fontSize: 10.5, marginBottom: 10, lineHeight: 1.4 }}>Suma de toda tu cartera, juntando los tres lugares: <strong className="cel">Balanz + Allaria + Nexo</strong>.</p>
           <ResponsiveContainer width="100%" height={230}><PieChart>
             <Pie data={byClass} dataKey="value" nameKey="name" innerRadius={55} outerRadius={88} paddingAngle={2}>{byClass.map((e, i) => <Cell key={i} fill={e.color} stroke="#0D1318" strokeWidth={2} />)}</Pie>
             <Tooltip contentStyle={ttStyle} content={({ active, payload }) => {
@@ -858,15 +868,33 @@ function Evolucion({ rows, history, totals, base, money, refRate }) {
 }
 const ttStyle = { background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 12, color: "#E7EEF4" };
 
-/* ============================== aportes tab ============================== */
-function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate }) {
-  const [form, setForm] = useState({ date: today(), amount: "", currency: "USD" });
+/* ============================== operaciones tab ============================== */
+function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate, ops, setOps }) {
+  const list = ops || [];
   const [op, setOp] = useState({ date: today(), broker: "BALANZ", ticker: "", cls: "CEDEAR", qty: "", price: "", currency: "ARS", mep: "" });
   const [msg, setMsg] = useState("");
-  const add = () => { if (!+form.amount) return; setAportes(a => [...a, { id: uid(), ...form, amount: +form.amount }]); setForm({ date: today(), amount: "", currency: "USD" }); };
-  const del = (id) => setAportes(a => a.filter(x => x.id !== id));
-  const sorted = [...aportes].sort((a, b) => b.date.localeCompare(a.date));
-  const monthly = useMemo(() => aportes.map(a => ({ mes: a.date.slice(0, 7), usd: a.currency === "USD" ? a.amount : 0 })).sort((x, y) => x.mes.localeCompare(y.mes)), [aportes]);
+  const [fy, setFy] = useState("todos"), [fm, setFm] = useState("todos"), [fa, setFa] = useState("todos"), [fb, setFb] = useState("todos");
+
+  const years = useMemo(() => [...new Set(list.map(o => o.date.slice(0, 4)))].sort(), [list]);
+  const activos = useMemo(() => [...new Set(list.map(o => o.activo))].sort(), [list]);
+  const brokers = useMemo(() => [...new Set(list.map(o => o.broker))].sort(), [list]);
+  const MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
+  const MESNOM = { "01": "Ene", "02": "Feb", "03": "Mar", "04": "Abr", "05": "May", "06": "Jun", "07": "Jul", "08": "Ago", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dic" };
+
+  const filtered = useMemo(() => list.filter(o =>
+    (fy === "todos" || o.date.slice(0, 4) === fy) &&
+    (fm === "todos" || o.date.slice(5, 7) === fm) &&
+    (fa === "todos" || o.activo === fa) &&
+    (fb === "todos" || o.broker === fb)
+  ).sort((a, b) => b.date.localeCompare(a.date)), [list, fy, fm, fa, fb]);
+
+  const sumARS = filtered.reduce((s, o) => s + (+o.montoARS || 0), 0);
+  const sumUSD = filtered.reduce((s, o) => s + (+o.usd || 0), 0);
+  const monthly = useMemo(() => {
+    const m = {};
+    filtered.forEach(o => { const k = o.date.slice(0, 7); m[k] = (m[k] || 0) + (+o.usd || 0); });
+    return Object.entries(m).map(([mes, usd]) => ({ mes, usd })).sort((a, b) => a.mes.localeCompare(b.mes));
+  }, [filtered]);
 
   const registerOp = () => {
     const qty = +op.qty, price = +op.price, mep = +op.mep || refRate || 1, tk = op.ticker.toUpperCase().trim();
@@ -878,43 +906,69 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
       if (i >= 0) { const h = hs[i]; return hs.map((x, j) => j === i ? { ...h, qty: (+h.qty || 0) + qty, investedARS: (+h.investedARS || 0) + addARS, investedUSD: (+h.investedUSD || 0) + addUSD, manualPrice: price, costEstimated: false } : x); }
       return [...hs, { id: uid(), ticker: tk, name: tk, cls: op.cls, broker: op.broker, currency: op.currency, qty, investedARS: addARS, investedUSD: addUSD, manualPrice: price, coingeckoId: CRYPTO_IDS[tk] || "", firstDate: op.date, costEstimated: false, liveAt: null }];
     });
-    setMsg("✓ " + tk + ": +" + fmt(qty, qty < 1 ? 4 : 0) + " nominales cargados en " + op.broker + " (US$ " + fmt(addUSD, 0) + ")");
+    setOps(o2 => [...(o2 || []), { date: op.date, broker: op.broker, activo: tk, montoARS: round2(addARS), mep: round2(mep), usd: round2(addUSD) }]);
+    setMsg("✓ " + tk + ": +" + fmt(qty, qty < 1 ? 4 : 0) + " en " + op.broker + " (US$ " + fmt(addUSD, 0) + ")");
     setOp(o => ({ ...o, ticker: "", qty: "", price: "", mep: "" }));
   };
 
+  const download = () => {
+    try {
+      const rows = filtered.map(o => ({ Fecha: o.date, Broker: o.broker, Activo: o.activo, "Monto ARS": o.montoARS, "MEP": o.mep || "", "USD": o.usd || "" }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Operaciones");
+      const tag = [fy !== "todos" && fy, fm !== "todos" && MESNOM[fm], fa !== "todos" && fa, fb !== "todos" && fb].filter(Boolean).join("_") || "todas";
+      XLSX.writeFile(wb, `operaciones_${tag}.xlsx`);
+    } catch (e) { alert("No pude generar el informe en este navegador."); }
+  };
+
+  const selStyle = { width: "auto", minWidth: 90 };
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
-        <div className="panel" style={{ padding: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>Aportes mensuales de capital (US$ al MEP de cada mes)</div>
-          <ResponsiveContainer width="100%" height={230}><BarChart data={monthly}>
-            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
-            <XAxis dataKey="mes" stroke="#5C6F7E" fontSize={9} interval={2} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
-            <Tooltip contentStyle={ttStyle} formatter={v => fmtUSD(v)} cursor={{ fill: "#1C2832" }} />
-            <Bar dataKey="usd" fill="#CBA45E" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>
-          <div className="eyebrow" style={{ margin: "8px 0 8px" }}>Registrar aporte de efectivo</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr auto", gap: 8, alignItems: "center" }}>
-            <input className="input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
-            <input className="input mono" type="number" placeholder="Monto" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
-            <select className="sel" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}><option value="USD">USD</option><option value="ARS">ARS</option></select>
-            <button className="btn-accent btn" onClick={add}><Plus size={14} /></button>
-          </div>
+      <div className="panel" style={{ padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+          <div className="eyebrow">Registro de operaciones · {filtered.length} de {list.length}</div>
+          <button className="btn" onClick={download}><Upload size={14} style={{ transform: "rotate(180deg)" }} />Descargar informe</button>
         </div>
-        <div className="panel" style={{ padding: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 8 }}>Total aportado (USD)</div>
-          <div className="kpi-num cel" style={{ fontSize: 30 }}>{fmtUSD(aportesUSD)}</div>
-          <div className="muted mono" style={{ fontSize: 12, marginBottom: 16 }}>{valUSD >= aportesUSD ? <span className="gain">Tu cartera vale {fmtPct((valUSD / aportesUSD - 1) * 100)} vs. lo aportado</span> : <span className="loss">Tu cartera vale {fmtPct((valUSD / aportesUSD - 1) * 100)} vs. lo aportado</span>}</div>
-          <div style={{ maxHeight: 200, overflow: "auto" }}>{sorted.map(a => (
-            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
-              <span className="mono muted" style={{ fontSize: 12 }}>{a.date}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 10 }}><span className="mono">{a.currency === "USD" ? "US$ " : "$ "}{fmt(a.amount, 0)}</span>
-                <button className="btn-ghost btn" style={{ padding: 4 }} onClick={() => del(a.id)}><Trash2 size={12} /></button></span></div>))}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          <div className="field"><label>Año</label><select className="sel" style={selStyle} value={fy} onChange={e => setFy(e.target.value)}><option value="todos">Todos</option>{years.map(y => <option key={y}>{y}</option>)}</select></div>
+          <div className="field"><label>Mes</label><select className="sel" style={selStyle} value={fm} onChange={e => setFm(e.target.value)}><option value="todos">Todos</option>{MESES.map(m => <option key={m} value={m}>{MESNOM[m]}</option>)}</select></div>
+          <div className="field"><label>Activo</label><select className="sel" style={selStyle} value={fa} onChange={e => setFa(e.target.value)}><option value="todos">Todos</option>{activos.map(a => <option key={a}>{a}</option>)}</select></div>
+          <div className="field"><label>Broker</label><select className="sel" style={selStyle} value={fb} onChange={e => setFb(e.target.value)}><option value="todos">Todos</option>{brokers.map(b => <option key={b}>{b}</option>)}</select></div>
         </div>
+        <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 16 }}>
+          <div><div className="eyebrow">Operaciones</div><div className="kpi-num" style={{ fontSize: 22, marginTop: 4 }}>{filtered.length}</div></div>
+          <div><div className="eyebrow">Invertido (USD)</div><div className="kpi-num gold" style={{ fontSize: 22, marginTop: 4 }}>{fmtUSD(sumUSD)}</div></div>
+          <div><div className="eyebrow">Invertido (ARS)</div><div className="kpi-num cel" style={{ fontSize: 22, marginTop: 4 }}>{fmtARS(sumARS)}</div></div>
+        </div>
+        {monthly.length > 0 && <ResponsiveContainer width="100%" height={180}><BarChart data={monthly}>
+          <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="mes" stroke="#5C6F7E" fontSize={9} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+          <Tooltip contentStyle={ttStyle} formatter={v => [fmtUSD(v), "Invertido"]} cursor={{ fill: "#1C2832" }} />
+          <Bar dataKey="usd" fill="#CBA45E" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>}
+        <div className="scrollx" style={{ marginTop: 12, maxHeight: 360, overflow: "auto" }}>
+          <table>
+            <thead><tr><th className="l">Fecha</th><th className="l">Broker</th><th className="l">Activo</th><th>Monto ARS</th><th>MEP</th><th>USD</th></tr></thead>
+            <tbody>
+              {filtered.map((o, i) => (
+                <tr key={i}>
+                  <td className="l mono muted">{o.date}</td>
+                  <td className="l">{o.broker}</td>
+                  <td className="l" style={{ fontFamily: "var(--display)", fontWeight: 600 }}>{o.activo}</td>
+                  <td className="mono">{fmt(o.montoARS, 0)}</td>
+                  <td className="mono muted">{o.mep ? fmt(o.mep, 0) : "—"}</td>
+                  <td className="mono gold">{o.usd ? fmt(o.usd, 0) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filtered.length === 0 && <div className="empty" style={{ padding: 20 }}>No hay operaciones con esos filtros.</div>}
       </div>
 
       <div className="panel" style={{ padding: 20 }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>Registrar operación de compra</div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>Cargá una compra y la cartera se actualiza sola: si ya tenés el activo suma los nominales y recalcula el costo promedio; si es nuevo, lo crea. El MEP del día es opcional (si lo dejás vacío uso el de referencia actual).</p>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Registrar nueva operación de compra</div>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>Cargá una compra: se suma al registro de arriba Y actualiza tu cartera (si ya tenés el activo, suma nominales y recalcula el costo; si es nuevo, lo crea). El MEP del día es opcional.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, alignItems: "end" }}>
           <div className="field"><label>Fecha</label><input className="input" type="date" value={op.date} onChange={e => setOp(o => ({ ...o, date: e.target.value }))} /></div>
           <div className="field"><label>Broker</label><select className="sel" value={op.broker} onChange={e => setOp(o => ({ ...o, broker: e.target.value }))}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
@@ -925,7 +979,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           <div className="field"><label>Moneda</label><select className="sel" value={op.currency} onChange={e => setOp(o => ({ ...o, currency: e.target.value }))}><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
-          <div className="field" style={{ maxWidth: 160 }}><label>MEP del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1445"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
+          <div className="field" style={{ maxWidth: 160 }}><label>MEP del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1452"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
           <button className="btn-accent btn" style={{ marginTop: 18 }} onClick={registerOp}><Plus size={14} />Registrar compra</button>
           {msg && <span className="mono" style={{ fontSize: 12, marginTop: 18, color: msg.startsWith("✓") ? "var(--gain)" : "var(--loss)" }}>{msg}</span>}
         </div>
@@ -1195,6 +1249,4 @@ function Disclaimer() {
 import { createRoot } from "react-dom/client";
 const _b=document.getElementById("boot"); if(_b) _b.remove();
 createRoot(document.getElementById("root")).render(<App/>);
-</script>
-</body>
-</html>
+</script></body></html>
