@@ -478,6 +478,37 @@ function Cartera({ rows, setHoldings, base, money, refRate }) {
   const [detail, setDetail] = useState(null);
   const [open, setOpen] = useState({});
   const r = refRate || 1;
+  // ---- Backup / Restore: exporta TODO el estado a un .json y lo vuelve a cargar (sin backend) ----
+  const backupRef = useRef(null);
+  const BACKUP_KEYS = ["inv7_holdings", "inv6_aportes", "inv7_ops", "inv6_settings", "inv6_history"];
+  const exportBackup = () => {
+    try {
+      const dump = { _app: "cartera-ar", _v: 1, exportedAt: new Date().toISOString(), data: {} };
+      BACKUP_KEYS.forEach(k => { const v = localStorage.getItem(k); if (v != null) dump.data[k] = v; });
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "cartera-backup_" + today() + ".json";
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { alert("No pude generar el backup en este navegador."); }
+  };
+  const importBackup = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(reader.result);
+        if (!obj || !obj.data || typeof obj.data !== "object") { alert("El archivo no parece un backup válido de la cartera."); return; }
+        const keys = Object.keys(obj.data).filter(k => BACKUP_KEYS.includes(k));
+        if (!keys.length) { alert("El backup no contiene datos reconocibles de la cartera."); return; }
+        const fecha = obj.exportedAt ? obj.exportedAt.slice(0, 10) : "sin fecha";
+        if (!window.confirm("Esto va a REEMPLAZAR toda tu cartera actual con la del backup (" + fecha + "). ¿Continuar?")) return;
+        keys.forEach(k => { try { localStorage.setItem(k, obj.data[k]); } catch {} });
+        alert("Backup restaurado. La app se va a recargar para tomar los datos.");
+        location.reload();
+      } catch (e) { alert("No pude leer el archivo. ¿Es el backup correcto (.json)?"); }
+    };
+    reader.readAsText(file);
+  };
   // group by class, groups sorted by total value
   const groups = useMemo(() => {
     const m = {};
@@ -497,7 +528,10 @@ function Cartera({ rows, setHoldings, base, money, refRate }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <h2 style={{ fontSize: 16, fontWeight: 600 }}>Posiciones por tipo de activo</h2>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn" onClick={exportBackup} title="Descarga un archivo .json con toda tu cartera (respaldo)"><Upload size={14} style={{ transform: "rotate(180deg)" }} />Backup</button>
+          <button className="btn" onClick={() => backupRef.current && backupRef.current.click()} title="Restaurar la cartera desde un archivo de backup"><History size={14} />Restaurar</button>
+          <input ref={backupRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={e => { importBackup(e.target.files && e.target.files[0]); e.target.value = ""; }} />
           <button className="btn" onClick={() => setShowImport(true)}><Upload size={14} />Reimportar Excel</button>
           <button className="btn-accent btn" onClick={() => setEdit({ id: uid(), ticker: "", name: "", cls: "MERVAL", broker: "BALANZ", currency: "ARS", qty: 0, investedARS: 0, investedUSD: 0, manualPrice: 0, firstDate: today(), _new: true })}><Plus size={14} />Agregar activo</button>
         </div>
@@ -552,7 +586,7 @@ function Cartera({ rows, setHoldings, base, money, refRate }) {
       </div>
 
       <p className="muted" style={{ fontSize: 11, marginTop: 12, lineHeight: 1.5 }}>
-        <ShieldCheck size={11} style={{ verticalAlign: -1 }} /> Tocá cualquier fila para ver el detalle y el gráfico. Tenencias y costo reales de tus resúmenes oficiales: <strong className="cel">Balanz</strong> lote por lote y <strong className="cel">Allaria</strong> por PPC. El P&amp;L es exacto salvo filas con <strong>~</strong>. <strong>Cripto</strong> en vivo (punto verde).
+        <ShieldCheck size={11} style={{ verticalAlign: -1 }} /> Tocá cualquier fila para ver el detalle y el gráfico. Tenencias y costo reales de tus resúmenes oficiales: <strong className="cel">Balanz</strong> lote por lote y <strong className="cel">Allaria</strong> por PPC. El P&amp;L es exacto salvo filas con <strong>~</strong>. <strong>Cripto</strong> en vivo (punto verde). · <strong className="gold">Backup</strong>: después de cargar un aporte, tocá "Backup" y guardá el archivo; si alguna vez se borra el navegador, "Restaurar" lo trae de vuelta.
       </p>
       {detail && <DetailModal row={detail} onClose={() => setDetail(null)} base={base} refRate={refRate} />}
       {edit && <EditModal row={edit} onClose={() => setEdit(null)} setHoldings={setHoldings} />}
