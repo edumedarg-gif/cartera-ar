@@ -1658,13 +1658,29 @@ function IA({ rows, totals, macro, pnlPct }) {
     const headers = { "Content-Type": "application/json" };
     const k = (typeof window !== "undefined") && window.__ANTHROPIC_KEY__;
     if (k) { headers["x-api-key"] = k; headers["anthropic-version"] = "2023-06-01"; headers["anthropic-dangerous-direct-browser-access"] = "true"; }
-    const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body) });
-    if (res.status === 401 || res.status === 403) throw new Error("KEY");
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || "API");
+    let res;
+    try { res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body) }); }
+    catch (e) { throw new Error("NET"); }
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok || data.error) {
+      const msg = (data.error && data.error.message) || ("HTTP " + res.status);
+      const low = msg.toLowerCase();
+      if (res.status === 401 || res.status === 403 || low.includes("api-key") || low.includes("authentication") || low.includes("x-api-key")) throw new Error("KEY");
+      if (res.status === 402 || low.includes("credit") || low.includes("balance") || low.includes("billing") || low.includes("insufficient")) throw new Error("CREDIT");
+      if (res.status === 429 || low.includes("rate limit")) throw new Error("RATE");
+      throw new Error(msg);
+    }
     return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   };
-  const errMsg = (e) => e && e.message === "KEY" ? "Tu API key falta o es inválida. Cargala arriba." : "Error al consultar la IA. Reintentá.";
+  const errMsg = (e) => {
+    const m = e && e.message;
+    if (m === "KEY") return "La API key falta o es inválida. Verificá que la pegaste completa (empieza con sk-ant-) y que no esté revocada.";
+    if (m === "CREDIT") return "Tu cuenta de API no tiene saldo. Entrá a console.anthropic.com → Billing y cargá créditos (con US$5 alcanza). Crear la key y cargar saldo son pasos distintos.";
+    if (m === "RATE") return "Demasiados pedidos por ahora. Esperá unos segundos y reintentá.";
+    if (m === "NET") return "No se pudo conectar con la API (bloqueo de red o CORS). Usá la versión publicada en Vercel (https), no el archivo abierto como file:// local.";
+    return "Error de la API: " + (m || "desconocido");
+  };
   const runRisk = async () => {
     if (needKey) { setErrR("Pegá tu API key de Anthropic arriba para activar la IA."); return; }
     setLoadingR(true); setErrR(""); setRiskOut("");
