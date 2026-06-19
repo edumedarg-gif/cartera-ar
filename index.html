@@ -100,6 +100,7 @@ const CLASS_LABEL = {EFECTIVO:"Efectivo / Dólares",MERVAL:"Acción MERVAL",CEDE
 const CLASS_COLOR = {EFECTIVO:"#8FB996",MERVAL:"#74ACDF",CEDEAR:"#CBA45E",BONO_CORP:"#9C8CE0",BONO_NAC:"#5BC0BE",FCI:"#E0A458",ACCION_INT:"#E8849C",ETF:"#6FB1C9",CRYPTO:"#43C28A"};
 /* riesgo 0-100 por clase (bonos soberanos AR = riesgo alto pese a ser "bono") */
 const CLASS_RISK = {EFECTIVO:5,FCI:15,BONO_CORP:42,BONO_NAC:55,CEDEAR:60,ETF:55,ACCION_INT:62,MERVAL:72,CRYPTO:95};
+const SHORT_CLS = {"Efectivo / Dólares":"Efectivo","Acción MERVAL":"MERVAL","Bono Corporativo":"B. Corp.","Bono Soberano":"B. Soberano","Acción Internacional":"Acción Int."};
 const BROKERS = ["ALLARIA","BALANZ","NEXO","SATOSHI","LEMON","OTRO"];
 const CRYPTO_IDS = {BTC:"bitcoin",ETH:"ethereum",USDT:"tether",USDC:"usd-coin",DAI:"dai",BNB:"binancecoin",SOL:"solana",ADA:"cardano",XRP:"ripple",DOGE:"dogecoin",MATIC:"matic-network",DOT:"polkadot",LTC:"litecoin",AVAX:"avalanche-2",LINK:"chainlink",NEXO:"nexo"};
 
@@ -157,6 +158,8 @@ function App() {
   const [loadingMacro, setLoadingMacro] = useState(false);
   const [macroDetail, setMacroDetail] = useState(null);
   const [hide, setHide] = useState(false);
+  const [btcLive, setBtcLive] = useState(null);
+  const [showBtc, setShowBtc] = useState(false);
   const loaded = useRef(false);
 
   useEffect(() => {
@@ -231,7 +234,9 @@ function App() {
         const ids = [...new Set(holdings.filter(h => h.cls === "CRYPTO").map(h => h.coingeckoId || CRYPTO_IDS[h.ticker?.toUpperCase()]).filter(Boolean))];
         if (ids.length) {
           try {
-            const cg = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`).then(r => r.json());
+            const cg = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd&include_24hr_change=true`).then(r => r.json());
+            const b = cg.bitcoin;
+            if (b && b.usd) setBtcLive({ price: b.usd, chg: (b.usd_24h_change != null ? b.usd_24h_change : null), at: new Date() });
             setHoldings(hs => hs.map(h => {
               if (h.cls !== "CRYPTO") return h;
               const id = h.coingeckoId || CRYPTO_IDS[h.ticker?.toUpperCase()];
@@ -245,6 +250,11 @@ function App() {
   useEffect(() => { if (loaded.current) refreshMacro(); /* eslint-disable-next-line */ }, [loaded.current]);
 
   const refRate = useMemo(() => { const d = macro.dolares?.[settings?.refDolar || "bolsa"]; return d ? (d.venta || d.compra) : null; }, [macro, settings]);
+  const btc = useMemo(() => {
+    if (btcLive && btcLive.price) return btcLive;
+    const h = (holdings || []).find(x => x.ticker === "BTC");
+    return h ? { price: h.manualPrice, chg: null, at: null } : null;
+  }, [btcLive, holdings]);
   const base = settings?.baseCur || "USD";
   const money = useCallback((usd, ars) => base === "ARS" ? fmtARS(ars) : fmtUSD(usd), [base]);
 
@@ -314,9 +324,10 @@ function App() {
   return (
     <div className={"app" + (hide ? " hide-money" : "")}>
       <style>{CSS}</style>
-      <Header macro={macro} settings={settings} setSettings={setSettings} refRate={refRate} loading={loadingMacro}
+      <Header macro={macro} settings={settings} setSettings={setSettings} refRate={refRate} loading={loadingMacro} btc={btc} onBtc={() => setShowBtc(true)}
         onRefresh={() => { refreshMacro(); setTimeout(snapshot, 1500); }} onMacro={setMacroDetail} hide={hide} setHide={setHide} />
       {macroDetail && <MacroModal item={macroDetail} onClose={() => setMacroDetail(null)} />}
+      {showBtc && <BtcModal btc={btc} onClose={() => setShowBtc(false)} />}
       <div className="wrap" style={{ paddingTop: 22, paddingBottom: 60 }}>
         <Hero totals={totals} pnlUSD={pnlUSD} pnlPct={pnlPct} aportesUSD={aportesUSD} count={rows.length} rate={rate} base={base} money={money} refRate={refRate} />
 
@@ -341,7 +352,7 @@ function App() {
 }
 
 /* ============================== header ============================== */
-function Header({ macro, settings, setSettings, refRate, loading, onRefresh, onMacro, hide, setHide }) {
+function Header({ macro, settings, setSettings, refRate, loading, onRefresh, onMacro, hide, setHide, btc, onBtc }) {
   const d = macro.dolares;
   const cell = (label, val, sub, key) => (
     <div className="macro-cell" onClick={key ? () => onMacro({ key, label }) : undefined}
@@ -377,19 +388,32 @@ function Header({ macro, settings, setSettings, refRate, loading, onRefresh, onM
               <option value="bolsa">Dólar MEP (ref.)</option><option value="contadoconliqui">Dólar CCL</option>
               <option value="cripto">Dólar Cripto</option><option value="blue">Dólar Blue</option><option value="oficial">Dólar Oficial</option>
             </select>
+            {macro.updated && <span className="muted mono" style={{ fontSize: 10.5, whiteSpace: "nowrap" }}>Datos {macro.updated.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</span>}
             <button className="btn" onClick={onRefresh} disabled={loading}><RefreshCw size={14} className={loading ? "spin" : ""} />Actualizar</button>
           </div>
         </div>
         <div className="macro-rail">
+          {btc && btc.price ? (
+            <div className="macro-cell" onClick={onBtc} title="Ver gráfico de 5 años" style={{ minWidth: 152, cursor: "pointer", background: "linear-gradient(135deg,#2A1E10,#1A140C)", border: "1px solid #F7931A" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 17, height: 17, borderRadius: "50%", background: "#F7931A", color: "#0D1318", fontWeight: 800, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>₿</span>
+                <span className="eyebrow" style={{ color: "#F7931A" }}>Bitcoin</span>
+              </div>
+              <div className="mono" style={{ fontSize: 17, fontWeight: 700, color: "#F7931A", marginTop: 3 }}>{"US$ " + fmt(btc.price, 0)}</div>
+              <div style={{ fontSize: 10, marginTop: 2, display: "flex", alignItems: "center", gap: 7 }}>
+                {btc.chg != null
+                  ? <span className="mono" style={{ color: btc.chg >= 0 ? "var(--gain)" : "var(--loss)", fontWeight: 700 }}>{(btc.chg >= 0 ? "▲ " : "▼ ") + Math.abs(btc.chg).toFixed(1) + "% 24h"}</span>
+                  : <span className="muted">precio guardado</span>}
+                {btc.at && <span className="muted">{btc.at.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</span>}
+              </div>
+            </div>
+          ) : null}
           {cell("MEP", d?.bolsa ? "$" + fmt(d.bolsa.venta, 0) : "—", null, "bolsa")}
           {cell("CCL", d?.contadoconliqui ? "$" + fmt(d.contadoconliqui.venta, 0) : "—", null, "contadoconliqui")}
           {cell("Blue", d?.blue ? "$" + fmt(d.blue.venta, 0) : "—", null, "blue")}
-          {cell("Cripto", d?.cripto ? "$" + fmt(d.cripto.venta, 0) : "—", null, "cripto")}
+          {cell("Cripto", d?.cripto ? "$" + fmt(d.cripto.venta, 0) : "—", "Dólar cripto", "cripto")}
           {cell("Oficial", d?.oficial ? "$" + fmt(d.oficial.venta, 0) : "—", null, "oficial")}
           {cell("Riesgo País", macro.riesgo ? fmt(macro.riesgo.valor, 0) + " pb" : "—", macro.riesgo?.fecha, "riesgo")}
-          <div className="macro-cell" style={{ minWidth: 128 }}><div className="eyebrow">T.C. referencia</div>
-            <div className="mono" style={{ fontSize: 17, fontWeight: 600, marginTop: 3 }}>{refRate ? "$" + fmt(refRate, 0) : "—"}</div>
-            <div className="muted" style={{ fontSize: 10, marginTop: 1 }}>{macro.updated ? "Act. " + macro.updated.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "sin datos"}</div></div>
         </div>
       </div>
     </div>
@@ -448,7 +472,77 @@ function MacroModal({ item, onClose }) {
   );
 }
 
-/* ============================== hero ============================== */
+/* ---- BTC 5-year history modal ---- */
+function BtcModal({ btc, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true); setErr(""); let pts = null, source = "";
+      // 1) Binance — cierre semanal (~5 años en una llamada, sin clave)
+      try {
+        const r = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300");
+        if (r.ok) { const j = await r.json(); if (Array.isArray(j) && j.length) { pts = j.map(k => ({ t: k[0], price: +k[4] })).slice(-261); source = "Binance"; } }
+      } catch (e) { /* sigo al respaldo */ }
+      // 2) Respaldo: CryptoCompare diario, lo paso a semanal
+      if (!pts) {
+        try {
+          const r = await fetch("https://min-api.cryptocompare.com/data/v2/histoday?fsym=BTC&tsym=USD&limit=1826");
+          const j = await r.json(); const arr = (j && j.Data && j.Data.Data) || [];
+          if (arr.length) { pts = arr.filter((_, i) => i % 7 === 0).map(d => ({ t: d.time * 1000, price: d.close })); source = "CryptoCompare"; }
+        } catch (e) { /* */ }
+      }
+      if (!alive) return;
+      if (pts && pts.length) { setData(pts.map(p => ({ date: new Date(p.t).toISOString().slice(0, 10), price: p.price }))); setSrc(source); }
+      else setErr("No pude cargar el historial de BTC ahora. Probá de nuevo en un rato.");
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+  const cur = (btc && btc.price) || (data && data.length ? data[data.length - 1].price : null);
+  const first = data && data.length ? data[0].price : null;
+  const chg = (cur != null && first) ? ((cur / first - 1) * 100) : null;
+  const ath = data && data.length ? Math.max(...data.map(d => d.price)) : null;
+  const low = data && data.length ? Math.min(...data.map(d => d.price)) : null;
+  const C = "#F7931A";
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal panel" style={{ padding: 24, maxWidth: 720 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 20, height: 20, borderRadius: "50%", background: C, color: "#0D1318", fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>₿</span>
+            Bitcoin <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· últimos 5 años (USD)</span>
+          </h3>
+          <button className="btn-ghost btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        {cur != null && <div style={{ display: "flex", gap: 26, marginBottom: 16, flexWrap: "wrap" }}>
+          <div><div className="eyebrow">Precio actual</div><div className="kpi-num" style={{ fontSize: 24, marginTop: 4, color: C }}>{"US$ " + fmt(cur, 0)}</div></div>
+          {chg != null && <div><div className="eyebrow">Cambio 5 años</div><div className={"kpi-num " + (chg >= 0 ? "gain" : "loss")} style={{ fontSize: 24, marginTop: 4 }}>{fmtPct(chg)}</div></div>}
+          {ath != null && <div><div className="eyebrow">Máx. del período</div><div className="kpi-num mono" style={{ fontSize: 18, marginTop: 6 }}>{"US$ " + fmt(ath, 0)}</div></div>}
+          {low != null && <div><div className="eyebrow">Mín. del período</div><div className="kpi-num mono" style={{ fontSize: 18, marginTop: 6 }}>{"US$ " + fmt(low, 0)}</div></div>}
+        </div>}
+        {loading ? <div className="empty" style={{ padding: 40 }}><Loader2 size={20} className="spin" /> Cargando 5 años de BTC…</div> :
+          err ? <div style={{ color: "var(--loss)", fontSize: 12.5 }}><AlertTriangle size={12} /> {err}</div> :
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={data}>
+              <defs><linearGradient id="gbtc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C} stopOpacity={.4} /><stop offset="100%" stopColor={C} stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="date" stroke="#5C6F7E" fontSize={10} interval={Math.ceil((data?.length || 1) / 8)} tickFormatter={v => v.slice(0, 4)} />
+              <YAxis stroke="#5C6F7E" fontSize={10} tickFormatter={v => "$" + (v >= 1000 ? (v / 1000).toFixed(0) + "k" : v)} />
+              <Tooltip contentStyle={ttStyle} formatter={v => ["US$ " + fmt(v, 0), "BTC"]} />
+              <Area type="monotone" dataKey="price" stroke={C} strokeWidth={2} fill="url(#gbtc)" />
+            </AreaChart>
+          </ResponsiveContainer>}
+        <p className="muted" style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>Fuente: {src || "Binance / CryptoCompare"}, cierre semanal en USD. CoinGecko gratis solo entrega 1 año de historia; por eso para los 5 años uso estas fuentes.</p>
+      </div>
+    </div>
+  );
+}
+
+
 function Hero({ totals, pnlUSD, pnlPct, aportesUSD, count, rate, base, money, refRate }) {
   const up = pnlUSD >= 0;
   const r = refRate || 1;
@@ -825,7 +919,7 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
     const months = Object.keys(byMonth).sort();
     let acc = 0; return months.map(m => { acc += byMonth[m]; return { mes: m, acum: acc, mensual: byMonth[m] }; });
   }, [aportes, refRate]);
-  const byClass = useMemo(() => { const m = {}; rows.forEach(r => { m[r.cls] = (m[r.cls] || 0) + r.m.valUSD; }); return Object.entries(m).map(([k, v]) => ({ name: CLASS_LABEL[k], value: v, color: CLASS_COLOR[k] })).filter(x => x.value > 0); }, [rows]);
+  const byClass = useMemo(() => { const m = {}, tk = {}; rows.forEach(r => { m[r.cls] = (m[r.cls] || 0) + r.m.valUSD; if (r.m.valUSD > 0) { (tk[r.cls] = tk[r.cls] || []).push({ t: r.ticker, v: r.m.valUSD }); } }); return Object.entries(m).map(([k, v]) => ({ name: CLASS_LABEL[k], value: v, color: CLASS_COLOR[k], tickers: (tk[k] || []).sort((a, b) => b.v - a.v).map(x => x.t) })).filter(x => x.value > 0); }, [rows]);
   const byBroker = useMemo(() => { const m = {}; rows.forEach(r => { m[r.broker] = (m[r.broker] || 0) + (base === "ARS" ? r.m.valARS : r.m.valUSD); }); return Object.entries(m).map(([k, v]) => ({ name: k, value: v, hasCrypto: rows.some(r => r.broker === k && r.cls === "CRYPTO") })).filter(x => x.value > 0).sort((a, b) => b.value - a.value); }, [rows, base]);
   const totalBase = base === "ARS" ? totals.valARS : totals.valUSD;
   // perfil de riesgo
@@ -834,17 +928,51 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
     let score = 0; const byCls = {};
     rows.forEach(r => { byCls[r.cls] = (byCls[r.cls] || 0) + r.m.valUSD; });
     Object.entries(byCls).forEach(([c, v]) => { score += (CLASS_RISK[c] ?? 50) * (v / totals.valUSD); });
-    const top = Math.max(...rows.map(r => r.m.valUSD)) / totals.valUSD * 100;
-    const cryptoW = (byCls.CRYPTO || 0) / totals.valUSD * 100;
+    const W = v => (v / totals.valUSD) * 100;
+    const topRow = rows.reduce((a, b) => (b.m.valUSD > (a ? a.m.valUSD : 0) ? b : a), null);
+    const top = topRow ? W(topRow.m.valUSD) : 0;
+    const topName = topRow ? topRow.ticker : "—";
+    const cryptoW = W(byCls.CRYPTO || 0);
+    const sovW = W(byCls.BONO_NAC || 0);
+    const sovTickers = rows.filter(r => r.cls === "BONO_NAC" && r.m.valUSD > 0).sort((a, b) => b.m.valUSD - a.m.valUSD).map(r => r.ticker);
+    const cryTickers = rows.filter(r => r.cls === "CRYPTO" && r.m.valUSD > 0).sort((a, b) => b.m.valUSD - a.m.valUSD).map(r => r.ticker);
+    const sev = p => p >= 18 ? "alta" : p >= 12 ? "media" : "ok";
+    const factors = [
+      { key: "sov", label: "Crédito soberano argentino", pct: sovW, sev: sev(sovW),
+        detail: sovTickers.slice(0, 6).join(" + ") + (sovTickers.length > 6 ? " +…" : ""),
+        note: "Se mueven todos con el riesgo país: es una sola apuesta, no varias." },
+      { key: "crypto", label: "Cripto", pct: cryptoW, sev: sev(cryptoW),
+        detail: cryTickers.join(" + "),
+        note: "Volatilidad alta, atada al ciclo (halving / bull-bear)." },
+      { key: "top", label: "Mayor posición individual · " + topName, pct: top, sev: top >= 15 ? "alta" : top >= 9 ? "media" : "ok",
+        detail: "", note: "Un solo papel; si recorta fuerte, te pega de lleno." },
+    ].sort((a, b) => b.pct - a.pct);
     const label = score < 28 ? "Conservadora" : score < 45 ? "Moderada" : score < 62 ? "Audaz" : "Agresiva";
     const color = score < 28 ? "#43C28A" : score < 45 ? "#8FB996" : score < 62 ? "#CBA45E" : "#E8604C";
-    return { score, label, color, top, cryptoW };
+    return { score, label, color, top, topName, cryptoW, sovW, factors };
   }, [rows, totals]);
   const pnlByAsset = useMemo(() => [...rows]
     .filter(r => r.cls !== "CRYPTO" && r.cls !== "EFECTIVO" && r.cls !== "FCI" && Math.abs(r.m.pnlUSD) >= 50)
     .sort((a, b) => b.m.pnlUSD - a.m.pnlUSD)
     .slice(0, 14)
     .map(r => ({ name: r.ticker, pnl: r.m.pnlUSD, color: CLASS_COLOR[r.cls], cls: CLASS_LABEL[r.cls] })), [rows]);
+  const renderClassLabel = ({ cx, cy, midAngle, outerRadius, percent, payload }) => {
+    const RAD = Math.PI / 180;
+    const cos = Math.cos(-midAngle * RAD), sin = Math.sin(-midAngle * RAD);
+    const sx = cx + (outerRadius + 2) * cos, sy = cy + (outerRadius + 2) * sin;
+    const mx = cx + (outerRadius + 15) * cos, my = cy + (outerRadius + 15) * sin;
+    const ex = mx + (cos >= 0 ? 1 : -1) * 11, ey = my;
+    const anchor = cos >= 0 ? "start" : "end";
+    const nm = SHORT_CLS[payload.name] || payload.name;
+    return (
+      <g>
+        <path d={"M" + sx + "," + sy + "L" + mx + "," + my + "L" + ex + "," + ey} stroke={payload.color} fill="none" strokeWidth={1} opacity={0.55} />
+        <circle cx={ex} cy={ey} r={1.6} fill={payload.color} />
+        <text x={ex + (cos >= 0 ? 5 : -5)} y={ey - 2} textAnchor={anchor} fill="#E7EEF4" fontSize={11} fontWeight={600}>{nm}</text>
+        <text x={ex + (cos >= 0 ? 5 : -5)} y={ey + 11} textAnchor={anchor} fill={payload.color} fontSize={10.5} fontWeight={700}>{(percent * 100).toFixed(1)}%</text>
+      </g>
+    );
+  };
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {risk && <div className="panel" style={{ padding: 20 }}>
@@ -865,8 +993,39 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
           </div>
         </div>
         <p className="muted" style={{ fontSize: 11.5, marginTop: 14, lineHeight: 1.6 }}>
-          Pondera cada clase por su riesgo (efectivo y FCI bajo; <strong>bonos soberanos AR alto pese a ser "bonos"</strong>; acciones medio-alto; cripto muy alto) según su peso real. Tu mayor posición concentra el <strong style={{ color: risk.top > 20 ? "var(--loss)" : "inherit" }}>{risk.top.toFixed(0)}%</strong>{risk.top > 20 ? " — ojo con la concentración" : ""}. Cripto pesa {risk.cryptoW.toFixed(0)}%.
+          Pondera cada clase por su riesgo (efectivo y FCI bajo; <strong>bonos soberanos AR alto pese a ser "bonos"</strong>; acciones medio-alto; cripto muy alto) según su peso real.
         </p>
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div className="eyebrow">Concentración por factor de riesgo</div>
+            {risk.factors.some(f => f.sev === "alta") &&
+              <span style={{ fontSize: 9.5, fontWeight: 700, color: "#E8604C", border: "1px solid #E8604C", borderRadius: 5, padding: "1px 6px", letterSpacing: ".05em" }}>REVISAR</span>}
+          </div>
+          <p className="muted" style={{ fontSize: 11, marginBottom: 12, lineHeight: 1.45 }}>Agrupa lo que <strong className="cel">se mueve junto</strong>. No es lo mismo tener tres bonos distintos que tres versiones de la misma apuesta.</p>
+          <div style={{ display: "grid", gap: 9 }}>
+            {risk.factors.map(f => {
+              const col = f.sev === "alta" ? "#E8604C" : f.sev === "media" ? "#CBA45E" : "#43C28A";
+              const txt = f.sev === "alta" ? "Alta" : f.sev === "media" ? "Media" : "OK";
+              return (
+                <div key={f.key} style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderLeft: "3px solid " + col, borderRadius: 8, padding: "9px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                    <span style={{ fontSize: 12.5, color: "#E7EEF4", fontWeight: 600 }}>{f.label}</span>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      <span className="mono" style={{ fontSize: 13.5, fontWeight: 700, color: col }}>{f.pct.toFixed(0)}%</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 700, color: col, marginLeft: 6, textTransform: "uppercase" }}>{txt}</span>
+                    </span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 3, background: "rgba(255,255,255,.07)", margin: "7px 0 6px" }}>
+                    <div style={{ width: Math.min(100, f.pct) + "%", height: "100%", borderRadius: 3, background: col }} />
+                  </div>
+                  <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.4 }}>
+                    {f.detail ? <span className="mono" style={{ color: "#9FB0BD" }}>{f.detail}</span> : null}{f.detail ? " · " : ""}{f.note}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>}
 
       <div className="panel" style={{ padding: 20 }}>
@@ -900,20 +1059,23 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
         <p className="muted" style={{ fontSize: 11, marginBottom: 16, lineHeight: 1.4 }}>Suma de toda tu cartera, juntando los tres lugares: <strong className="cel">Balanz + Allaria + Nexo</strong>. El total está en el centro.</p>
         <div style={{ display: "flex", gap: 28, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 360px", minWidth: 300, position: "relative" }}>
-            <ResponsiveContainer width="100%" height={340}><PieChart>
-              <Pie data={byClass} dataKey="value" nameKey="name" innerRadius={92} outerRadius={150} paddingAngle={2}>{byClass.map((e, i) => <Cell key={i} fill={e.color} stroke="#0D1318" strokeWidth={2} />)}</Pie>
+            <ResponsiveContainer width="100%" height={360}><PieChart>
+              <Pie data={byClass} dataKey="value" nameKey="name" innerRadius={86} outerRadius={122} paddingAngle={2} labelLine={false} label={renderClassLabel} isAnimationActive={false}>{byClass.map((e, i) => <Cell key={i} fill={e.color} stroke="#0D1318" strokeWidth={2} />)}</Pie>
               <Tooltip content={({ active, payload }) => {
                 if (!active || !payload || !payload.length) return null;
                 const p = payload[0].payload;
-                return (<div style={{ background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, padding: "8px 11px", fontSize: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: p.color }} /><span style={{ color: "#E7EEF4", fontWeight: 600 }}>{p.name}</span></div>
-                  <div className="mono gold">{fmtUSD(p.value)}</div>
-                  <div className="mono muted" style={{ fontSize: 11 }}>{((p.value / totals.valUSD) * 100).toFixed(1)}% de la cartera</div>
+                return (<div style={{ background: "#0D1318", border: "1px solid " + p.color, borderRadius: 9, padding: "9px 12px", fontSize: 12, minWidth: 170, boxShadow: "0 8px 24px rgba(0,0,0,.45)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: p.color }} /><span style={{ color: "#E7EEF4", fontWeight: 600 }}>{p.name}</span></div>
+                  <div className="mono gold" style={{ fontSize: 15 }}>{fmtUSD(p.value)}</div>
+                  <div className="mono muted" style={{ fontSize: 11, marginTop: 2 }}>{((p.value / totals.valUSD) * 100).toFixed(1)}% de la cartera</div>
+                  {p.tickers && p.tickers.length ? <div className="muted" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.4 }}>{p.tickers.slice(0, 6).join(" · ")}{p.tickers.length > 6 ? " · +" + (p.tickers.length - 6) : ""}</div> : null}
                 </div>);
               }} /></PieChart></ResponsiveContainer>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-              <div className="eyebrow" style={{ fontSize: 9 }}>Total cartera</div>
-              <div className="kpi-num gold" style={{ fontSize: 24, marginTop: 3 }}>{fmtUSD(totals.valUSD)}</div>
+              <div style={{ textAlign: "center", maxWidth: 150 }}>
+                <div className="eyebrow" style={{ fontSize: 9 }}>Total cartera</div>
+                <div className="kpi-num gold" style={{ fontSize: 19, marginTop: 3, lineHeight: 1.05, whiteSpace: "nowrap" }}>{fmtUSD(totals.valUSD)}</div>
+              </div>
             </div>
           </div>
           <div style={{ flex: "1 1 260px", minWidth: 240, display: "grid", gap: 8 }}>
