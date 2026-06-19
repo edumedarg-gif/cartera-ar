@@ -26,7 +26,7 @@ window.__ANTHROPIC_KEY__ = localStorage.getItem('ANTHROPIC_KEY') || '';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import * as XLSX from "xlsx";
 import {
@@ -1108,11 +1108,13 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           <div><div className="eyebrow">Invertido (USD)</div><div className="kpi-num gold" style={{ fontSize: 22, marginTop: 4 }}>{fmtUSD(sumUSD)}</div></div>
           <div><div className="eyebrow">Invertido (ARS)</div><div className="kpi-num cel" style={{ fontSize: 22, marginTop: 4 }}>{fmtARS(sumARS)}</div></div>
           <div><div className="eyebrow">MEP prom. del período</div><div className="kpi-num" style={{ fontSize: 22, marginTop: 4, color: "var(--celeste)" }}>{sumUSD > 0 ? "$" + fmt(sumARS / sumUSD, 0) : "—"}</div></div>
+          <div><div className="eyebrow">Prom. mensual (USD)</div><div className="kpi-num gold" style={{ fontSize: 22, marginTop: 4 }}>{monthly.length ? fmtUSD(sumUSD / monthly.length) : "—"}</div></div>
         </div>
         {monthly.length > 0 && <ResponsiveContainer width="100%" height={180}><BarChart data={monthly}>
           <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
           <XAxis dataKey="mes" stroke="#5C6F7E" fontSize={9} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
           <Tooltip contentStyle={ttStyle} formatter={v => [fmtUSD(v), "Invertido"]} cursor={{ fill: "#1C2832" }} />
+          {monthly.length > 1 && <ReferenceLine y={sumUSD / monthly.length} stroke="#E7EEF4" strokeDasharray="5 4" strokeOpacity={0.55} label={{ value: "prom " + fmtUSD(sumUSD / monthly.length), fill: "#9FB0BD", fontSize: 9, position: "insideTopRight" }} />}
           <Bar dataKey="usd" fill="#CBA45E" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>}
         <div className="scrollx" style={{ marginTop: 12, maxHeight: 360, overflow: "auto" }}>
           <table>
