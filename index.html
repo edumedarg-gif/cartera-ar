@@ -1690,8 +1690,8 @@ function IA({ rows, totals, macro, pnlPct }) {
 CARTERA: ${portfolioStr()}
 Valor total: ${fmtUSD(totals.valUSD)} | Resultado: ${fmtPct(pnlPct)}
 Macro hoy: MEP $${macro.dolares?.bolsa?.venta || "?"}, CCL $${macro.dolares?.contadoconliqui?.venta || "?"}, Riesgo País ${macro.riesgo?.valor || "?"} pb.
-Buscá en la web el contexto MÁS ACTUAL de Argentina (cepo/BCRA, CNV, situación de los activos) y evaluá: 1) CONCENTRACIÓN 2) RIESGO CAMBIARIO 3) RIESGO SOBERANO/PAÍS 4) RIESGO REGULATORIO 5) LIQUIDEZ. Cerrá con NIVEL DE RIESGO GLOBAL (Bajo/Medio/Alto) y 3 acciones priorizadas. Viñetas con "-". Máx 350 palabras. No des consejo financiero personalizado, solo análisis de riesgo objetivo.`;
-      setRiskOut(await callClaude(p, true) || "No obtuve respuesta. Reintentá."); setRiskAt(new Date());
+Buscá en la web el contexto MÁS ACTUAL de Argentina (cepo/BCRA, CNV, situación de los activos) y evaluá: 1) CONCENTRACIÓN 2) RIESGO CAMBIARIO 3) RIESGO SOBERANO/PAÍS 4) RIESGO REGULATORIO 5) LIQUIDEZ. Cerrá con NIVEL DE RIESGO GLOBAL (Bajo/Medio/Alto) y 3 acciones priorizadas. Viñetas con "-". Máx 450 palabras, pero COMPLETÁ las 5 secciones más el cierre — no cortes a la mitad. No des consejo financiero personalizado, solo análisis de riesgo objetivo.`;
+      setRiskOut(await callClaude(p, true, 2000) || "No obtuve respuesta. Reintentá."); setRiskAt(new Date());
     } catch (e) { setErrR(errMsg(e)); } finally { setLoadingR(false); }
   };
   const runNews = async () => {
@@ -1719,7 +1719,7 @@ Reglas CLAVE: cada ítem arranca con lo que pasó en las ÚLTIMAS 24-48 HS (el d
     const items = []; let cur = null;
     lines.forEach(l => { const m = l.match(/^\s*[-•]\s+(.*)$/); if (m) { if (cur != null) items.push(cur); cur = m[1]; } else { const t = l.trim(); if (!t) return; cur = cur == null ? t : cur + " " + t; } });
     if (cur != null) items.push(cur);
-    return items.map((it, i) => (
+    return items.filter(x => x && x.trim()).map((it, i) => (
       <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, lineHeight: 1.5 }}>
         <span className="cel" style={{ flexShrink: 0 }}>•</span>
         <span dangerouslySetInnerHTML={{ __html: fmtAI(it) }} />
