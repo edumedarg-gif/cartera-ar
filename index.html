@@ -68,7 +68,7 @@ const CSS = `
 table{width:100%;border-collapse:collapse}
 th{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);text-align:right;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:500}
 th.l,td.l{text-align:left}
-td{padding:13px 12px;border-bottom:1px solid var(--line);font-size:13px}
+td{padding:13px 12px;border-bottom:1px solid var(--line);font-size:13px;text-align:right}
 tr:hover td{background:#19232C}
 .chip{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:6px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .modal-bg{position:fixed;inset:0;background:rgba(6,10,13,.72);backdrop-filter:blur(3px);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
@@ -969,7 +969,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
     for (let i = fwd.length - 1; i >= 0; i--) { if (!fwd[i].mep) { fwd[i].mep = next; fwd[i].mepEst = true; } else next = fwd[i].mep; }
     return fwd.map(o => ({
       ...o,
-      broker: (o.broker === "SATOSHI" || o.broker === "LEMON") ? "NEXO" : o.broker,
+      broker: (o.broker === "LEMON") ? "NEXO" : o.broker,
       usd: (o.usd != null && o.usd !== "") ? o.usd : (o.mep ? round2(o.montoARS / o.mep) : null),
     })).sort((a, b) => b.date.localeCompare(a.date));
   }, [ops]);
@@ -1067,7 +1067,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           </table>
         </div>
         {filtered.length === 0 && <div className="empty" style={{ padding: 20 }}>No hay operaciones con esos filtros.</div>}
-        <p className="muted" style={{ fontSize: 10.5, marginTop: 10, lineHeight: 1.45 }}>El <span className="mono">~</span> indica un MEP estimado a partir de operaciones cercanas (cuando el dato no venía en la operación). Las compras de cripto figuran consolidadas en <strong className="cel">NEXO</strong>.</p>
+        <p className="muted" style={{ fontSize: 10.5, marginTop: 10, lineHeight: 1.45 }}>El <span className="mono">~</span> indica un MEP estimado a partir de operaciones cercanas (cuando el dato no venía en la operación). Las compras de cripto figuran por su plataforma real (<strong className="cel">Satoshi</strong>); las pocas de Lemon se muestran como <strong className="cel">Nexo</strong>.</p>
       </div>
 
       <div className="panel" style={{ padding: 20 }}>
