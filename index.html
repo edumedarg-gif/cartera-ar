@@ -163,12 +163,12 @@ function App() {
     (async () => {
       const _hV = await storeGet("inv7_holdingsV", 0);
       let hs;
-      if (_hV < 1) { hs = SEED_HOLDINGS; storeSet("inv7_holdings", SEED_HOLDINGS); storeSet("inv7_holdingsV", 1); }
+      if (_hV < 2) { hs = SEED_HOLDINGS; storeSet("inv7_holdings", SEED_HOLDINGS); storeSet("inv7_holdingsV", 2); }
       else hs = await storeGet("inv7_holdings", SEED_HOLDINGS);
       setHoldings(hs.map(h => (h.isCash || h.ticker === "USD-BAL" || h.ticker === "USD-ALL") ? { ...h, cls: "EFECTIVO" } : h));
       setAportes(await storeGet("inv6_aportes", SEED_APORTES));
       const _opsV = await storeGet("inv7_opsV", 0);
-      if (_opsV < 4) { setOps(SEED_OPS); storeSet("inv7_ops", SEED_OPS); storeSet("inv7_opsV", 4); }
+      if (_opsV < 5) { setOps(SEED_OPS); storeSet("inv7_ops", SEED_OPS); storeSet("inv7_opsV", 5); }
       else setOps(await storeGet("inv7_ops", SEED_OPS));
       setSettings(await storeGet("inv6_settings", { refDolar: "bolsa", baseCur: "USD", returns: { MERVAL: 18, CEDEAR: 12, BONO_CORP: 9, BONO_NAC: 11, FCI: 8, ACCION_INT: 10, ETF: 9, CRYPTO: 25 }, monthlyAporteUSD: 2000 }));
       setHistory(await storeGet("inv6_history", []));
@@ -952,12 +952,44 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
 const ttStyle = { background: "#0D1318", border: "1px solid #2A3946", borderRadius: 8, fontFamily: "var(--mono)", fontSize: 12, color: "#E7EEF4" };
 
 /* ============================== operaciones tab ============================== */
+function OpEditModal({ op, idx, onClose, setOps }) {
+  const [e, setE] = useState({ date: op.date, broker: op.broker, activo: op.activo, montoARS: op.montoARS ?? "", mep: op.mep ?? "", usd: op.usd ?? "" });
+  const set = (k, v) => setE(s => ({ ...s, [k]: v }));
+  const save = () => {
+    setOps(prev => prev.map((x, i) => i === idx ? { date: e.date, broker: (e.broker || "").toUpperCase().trim(), activo: (e.activo || "").toUpperCase().trim(), montoARS: +e.montoARS || 0, mep: (e.mep === "" || e.mep == null) ? null : +e.mep, usd: (e.usd === "" || e.usd == null) ? null : +e.usd } : x));
+    onClose();
+  };
+  const remove = () => { setOps(prev => prev.filter((_, i) => i !== idx)); onClose(); };
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal panel" style={{ padding: 24 }} onClick={ev => ev.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600 }}>Editar operación</h3>
+          <button className="btn-ghost btn" onClick={onClose}><X size={16} /></button></div>
+        <p className="muted" style={{ fontSize: 11, marginBottom: 16, lineHeight: 1.45 }}>Edita o borra este registro. <strong>Afecta solo el registro de operaciones, no tus tenencias</strong> — para corregir cantidades de un activo, usá el lápiz en la pestaña Cartera.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="field"><label>Fecha</label><input className="input" type="date" value={e.date} onChange={ev => set("date", ev.target.value)} /></div>
+          <div className="field"><label>Broker</label><select className="sel" value={e.broker} onChange={ev => set("broker", ev.target.value)}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
+          <div className="field"><label>Activo</label><input className="input" value={e.activo} onChange={ev => set("activo", ev.target.value)} /></div>
+          <div className="field"><label>Monto ARS</label><input className="input mono" type="number" value={e.montoARS} onChange={ev => set("montoARS", ev.target.value)} /></div>
+          <div className="field"><label>MEP (vacío = estimar)</label><input className="input mono" type="number" value={e.mep} onChange={ev => set("mep", ev.target.value)} /></div>
+          <div className="field"><label>USD</label><input className="input mono" type="number" value={e.usd} onChange={ev => set("usd", ev.target.value)} /></div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+          <button className="btn" style={{ color: "var(--loss)", borderColor: "#5a2a25" }} onClick={remove}><Trash2 size={14} />Eliminar</button>
+          <button className="btn-accent btn" onClick={save}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate, ops, setOps }) {
   // Normaliza operaciones: consolida cripto en NEXO y completa el MEP faltante
   // a partir de operaciones previas (mismo día -> monto/USD -> arrastre cronológico).
   const list = useMemo(() => {
     const valid = m => m && m > 200 && m < 5000;
-    const raw = (ops || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const raw = (ops || []).map((o, i) => ({ ...o, _i: i })).sort((a, b) => a.date.localeCompare(b.date));
     const dayMep = {};
     raw.forEach(o => { if (valid(o.mep)) dayMep[o.date] = o.mep; });
     let last = null;
@@ -978,6 +1010,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
   }, [ops]);
   const [op, setOp] = useState({ date: today(), broker: "BALANZ", ticker: "", cls: "CEDEAR", mode: "qty", qty: "", price: "", currency: "ARS", mep: "", montoARS: "", usdNeto: "" });
   const [msg, setMsg] = useState("");
+  const [editOp, setEditOp] = useState(null);
   const [fy, setFy] = useState("todos"), [fm, setFm] = useState("todos"), [fa, setFa] = useState("todos"), [fb, setFb] = useState("todos");
 
   const years = useMemo(() => [...new Set(list.map(o => o.date.slice(0, 4)))].sort(), [list]);
@@ -1083,7 +1116,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           <Bar dataKey="usd" fill="#CBA45E" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>}
         <div className="scrollx" style={{ marginTop: 12, maxHeight: 360, overflow: "auto" }}>
           <table>
-            <thead><tr><th className="l">Fecha</th><th className="l">Broker</th><th className="l">Activo</th><th>Monto ARS</th><th>MEP</th><th>USD</th></tr></thead>
+            <thead><tr><th className="l">Fecha</th><th className="l">Broker</th><th className="l">Activo</th><th>Monto ARS</th><th>MEP</th><th>USD</th><th></th></tr></thead>
             <tbody>
               {filtered.map((o, i) => (
                 <tr key={i}>
@@ -1093,6 +1126,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
                   <td className="mono">{fmt(o.montoARS, 0)}</td>
                   <td className="mono muted" title={o.mepEst ? "MEP estimado a partir de operaciones cercanas" : "MEP de la operación"}>{o.mep ? (o.mepEst ? "~" : "") + fmt(o.mep, 0) : "—"}</td>
                   <td className="mono gold">{o.usd ? fmt(o.usd, 0) : "—"}</td>
+                  <td><button className="btn-ghost btn" style={{ padding: 6 }} title="Editar o borrar esta operación" onClick={() => setEditOp(o._i)}><Pencil size={13} /></button></td>
                 </tr>
               ))}
             </tbody>
@@ -1109,7 +1143,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           <div className="field"><label>Fecha</label><input className="input" type="date" value={op.date} onChange={e => setOp(o => ({ ...o, date: e.target.value }))} /></div>
           <div className="field"><label>Broker</label><select className="sel" value={op.broker} onChange={e => setOp(o => ({ ...o, broker: e.target.value }))}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
           <div className="field"><label>Activo</label><input className="input" placeholder="BTC" value={op.ticker} onChange={e => setOp(o => ({ ...o, ticker: e.target.value }))} /></div>
-          <div className="field"><label>Clase</label><select className="sel" value={op.cls} onChange={e => setOp(o => ({ ...o, cls: e.target.value, currency: e.target.value === "CRYPTO" ? "USD" : o.currency }))}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
+          <div className="field"><label>Clase</label><select className="sel" value={op.cls} onChange={e => setOp(o => ({ ...o, cls: e.target.value, currency: e.target.value === "CRYPTO" ? "USD" : o.currency, broker: e.target.value === "CRYPTO" ? "NEXO" : o.broker }))}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
           <div className="field"><label>Modo de carga</label><select className="sel" value={op.mode} onChange={e => setOp(o => ({ ...o, mode: e.target.value }))}><option value="qty">Por nominales</option><option value="monto">Por monto $</option></select></div>
           <div className="field"><label>Moneda del precio</label><select className="sel" value={op.currency} onChange={e => setOp(o => ({ ...o, currency: e.target.value }))}><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
         </div>
@@ -1129,6 +1163,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           {msg && <span className="mono" style={{ fontSize: 12, color: msg.startsWith("✓") ? "var(--gain)" : "var(--loss)" }}>{msg}</span>}
         </div>
       </div>
+      {editOp != null && ops[editOp] && <OpEditModal op={ops[editOp]} idx={editOp} onClose={() => setEditOp(null)} setOps={setOps} />}
     </div>
   );
 }
