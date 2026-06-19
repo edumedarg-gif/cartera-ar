@@ -161,11 +161,14 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      const hs = await storeGet("inv7_holdings", SEED_HOLDINGS);
+      const _hV = await storeGet("inv7_holdingsV", 0);
+      let hs;
+      if (_hV < 1) { hs = SEED_HOLDINGS; storeSet("inv7_holdings", SEED_HOLDINGS); storeSet("inv7_holdingsV", 1); }
+      else hs = await storeGet("inv7_holdings", SEED_HOLDINGS);
       setHoldings(hs.map(h => (h.isCash || h.ticker === "USD-BAL" || h.ticker === "USD-ALL") ? { ...h, cls: "EFECTIVO" } : h));
       setAportes(await storeGet("inv6_aportes", SEED_APORTES));
       const _opsV = await storeGet("inv7_opsV", 0);
-      if (_opsV < 3) { setOps(SEED_OPS); storeSet("inv7_ops", SEED_OPS); storeSet("inv7_opsV", 3); }
+      if (_opsV < 4) { setOps(SEED_OPS); storeSet("inv7_ops", SEED_OPS); storeSet("inv7_opsV", 4); }
       else setOps(await storeGet("inv7_ops", SEED_OPS));
       setSettings(await storeGet("inv6_settings", { refDolar: "bolsa", baseCur: "USD", returns: { MERVAL: 18, CEDEAR: 12, BONO_CORP: 9, BONO_NAC: 11, FCI: 8, ACCION_INT: 10, ETF: 9, CRYPTO: 25 }, monthlyAporteUSD: 2000 }));
       setHistory(await storeGet("inv6_history", []));
@@ -1003,7 +1006,8 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
     const price = +op.price, mep = +op.mep || refRate || 1;
     if (op.mode === "monto") {
       const m = +op.montoARS; if (!m || !price) return null;
-      const usd = +op.usdNeto || m / mep;
+      if (+op.usdNeto) { const usd = +op.usdNeto; return { qty: usd / price, usd, ars: m, mep: m / usd }; }
+      const usd = m / mep;
       const qty = op.currency === "USD" ? usd / price : m / price;
       return { qty, usd, ars: m, mep: usd ? m / usd : mep };
     }
@@ -1016,13 +1020,14 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
   const registerOp = () => {
     const tk = op.ticker.toUpperCase().trim(), price = +op.price, mep = +op.mep || refRate || 1;
     if (!tk) { setMsg("Completá el activo (ticker)."); return; }
-    let qty, addARS, addUSD;
+    let qty, addARS, addUSD, effCur = op.currency;
     if (op.mode === "monto") {
       const montoARS = +op.montoARS;
       if (!montoARS || !price) { setMsg("Completá monto en ARS y precio."); return; }
       addARS = montoARS;
-      addUSD = +op.usdNeto || montoARS / mep;
-      qty = op.currency === "USD" ? addUSD / price : montoARS / price;
+      if (+op.usdNeto) { effCur = "USD"; addUSD = +op.usdNeto; qty = addUSD / price; } // recibiste USD -> el precio es en USD
+      else if (op.currency === "USD") { effCur = "USD"; addUSD = montoARS / mep; qty = addUSD / price; }
+      else { effCur = "ARS"; addUSD = montoARS / mep; qty = montoARS / price; }
     } else {
       qty = +op.qty;
       if (!qty || !price) { setMsg("Completá nominales y precio."); return; }
@@ -1033,7 +1038,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
     setHoldings(hs => {
       const i = hs.findIndex(h => h.ticker === tk && h.broker === op.broker);
       if (i >= 0) { const h = hs[i]; return hs.map((x, j) => j === i ? { ...h, qty: (+h.qty || 0) + qty, investedARS: (+h.investedARS || 0) + addARS, investedUSD: (+h.investedUSD || 0) + addUSD, manualPrice: price, costEstimated: false } : x); }
-      return [...hs, { id: uid(), ticker: tk, name: tk, cls: op.cls, broker: op.broker, currency: op.currency, qty, investedARS: addARS, investedUSD: addUSD, manualPrice: price, coingeckoId: CRYPTO_IDS[tk] || "", firstDate: op.date, costEstimated: false, liveAt: null }];
+      return [...hs, { id: uid(), ticker: tk, name: tk, cls: op.cls, broker: op.broker, currency: effCur, qty, investedARS: addARS, investedUSD: addUSD, manualPrice: price, coingeckoId: CRYPTO_IDS[tk] || "", firstDate: op.date, costEstimated: false, liveAt: null }];
     });
     setOps(o2 => [...(o2 || []), { date: op.date, broker: op.broker, activo: tk, montoARS: round2(addARS), mep: opMep, usd: round2(addUSD) }]);
     setMsg("✓ " + tk + ": +" + fmt(qty, qty < 1 ? 6 : 0) + " en " + op.broker + " (US$ " + fmt(addUSD, 0) + ")");
@@ -1104,7 +1109,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
           <div className="field"><label>Fecha</label><input className="input" type="date" value={op.date} onChange={e => setOp(o => ({ ...o, date: e.target.value }))} /></div>
           <div className="field"><label>Broker</label><select className="sel" value={op.broker} onChange={e => setOp(o => ({ ...o, broker: e.target.value }))}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
           <div className="field"><label>Activo</label><input className="input" placeholder="BTC" value={op.ticker} onChange={e => setOp(o => ({ ...o, ticker: e.target.value }))} /></div>
-          <div className="field"><label>Clase</label><select className="sel" value={op.cls} onChange={e => setOp(o => ({ ...o, cls: e.target.value }))}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
+          <div className="field"><label>Clase</label><select className="sel" value={op.cls} onChange={e => setOp(o => ({ ...o, cls: e.target.value, currency: e.target.value === "CRYPTO" ? "USD" : o.currency }))}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
           <div className="field"><label>Modo de carga</label><select className="sel" value={op.mode} onChange={e => setOp(o => ({ ...o, mode: e.target.value }))}><option value="qty">Por nominales</option><option value="monto">Por monto $</option></select></div>
           <div className="field"><label>Moneda del precio</label><select className="sel" value={op.currency} onChange={e => setOp(o => ({ ...o, currency: e.target.value }))}><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
         </div>
@@ -1116,7 +1121,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
                 <div className="field"><label>USD recibido (opcional)</label><input className="input mono" type="number" placeholder="1935.11" value={op.usdNeto} onChange={e => setOp(o => ({ ...o, usdNeto: e.target.value }))} /></div>
               </>}
           <div className="field"><label>Precio del activo</label><input className="input mono" type="number" placeholder="62525.08" value={op.price} onChange={e => setOp(o => ({ ...o, price: e.target.value }))} /></div>
-          <div className="field"><label>MEP del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1543"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
+          <div className="field"><label>MEP / USDT del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1543"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
           <button className="btn-accent btn" onClick={registerOp}><Plus size={14} />Registrar compra</button>
