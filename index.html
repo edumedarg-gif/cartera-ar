@@ -1644,6 +1644,7 @@ function Historico() {
 /* ============================== IA tab ============================== */
 function IA({ rows, totals, macro, pnlPct }) {
   const [riskOut, setRiskOut] = useState(""); const [newsOut, setNewsOut] = useState("");
+  const [riskAt, setRiskAt] = useState(null); const [newsAt, setNewsAt] = useState(null);
   const [loadingR, setLoadingR] = useState(false); const [loadingN, setLoadingN] = useState(false);
   const [errR, setErrR] = useState(""); const [errN, setErrN] = useState("");
   const hasKeyVar = typeof window !== "undefined" && "__ANTHROPIC_KEY__" in window;
@@ -1690,7 +1691,7 @@ CARTERA: ${portfolioStr()}
 Valor total: ${fmtUSD(totals.valUSD)} | Resultado: ${fmtPct(pnlPct)}
 Macro hoy: MEP $${macro.dolares?.bolsa?.venta || "?"}, CCL $${macro.dolares?.contadoconliqui?.venta || "?"}, Riesgo País ${macro.riesgo?.valor || "?"} pb.
 Buscá en la web el contexto MÁS ACTUAL de Argentina (cepo/BCRA, CNV, situación de los activos) y evaluá: 1) CONCENTRACIÓN 2) RIESGO CAMBIARIO 3) RIESGO SOBERANO/PAÍS 4) RIESGO REGULATORIO 5) LIQUIDEZ. Cerrá con NIVEL DE RIESGO GLOBAL (Bajo/Medio/Alto) y 3 acciones priorizadas. Viñetas con "-". Máx 350 palabras. No des consejo financiero personalizado, solo análisis de riesgo objetivo.`;
-      setRiskOut(await callClaude(p, true) || "No obtuve respuesta. Reintentá.");
+      setRiskOut(await callClaude(p, true) || "No obtuve respuesta. Reintentá."); setRiskAt(new Date());
     } catch (e) { setErrR(errMsg(e)); } finally { setLoadingR(false); }
   };
   const runNews = async () => {
@@ -1706,11 +1707,43 @@ Estructurá en TRES bloques:
 **PANORAMA GLOBAL** — máx 3 ítems: Fed/tasas, S&P 500/Nasdaq, y lo más relevante del día.
 **TUS ACTIVOS** — solo los que tengan novedad real, de esta lista: ${top}. Por cada uno: **TICKER** y luego "- [titular] — por qué te importa".
 
-Reglas: viñetas con "-"; cada ítem con la FECHA y el medio entre paréntesis cuando puedas. Concreto, sin relleno. Máx 450 palabras. Información objetiva, sin recomendar comprar/vender.`;
-      setNewsOut(await callClaude(p, true, 1600) || "Sin noticias relevantes ahora. Reintentá.");
+Reglas CLAVE: cada ítem arranca con lo que pasó en las ÚLTIMAS 24-48 HS (el dato fresco primero). Solo agregá contexto más viejo si es imprescindible para entender, y en ese caso UNA sola frase corta al final del ítem. Nada de relleno histórico. Viñetas con "-"; cada ítem con la FECHA y el medio entre paréntesis cuando puedas. Máx 400 palabras. Información objetiva, sin recomendar comprar/vender.`;
+      setNewsOut(await callClaude(p, true, 1600) || "Sin noticias relevantes ahora. Reintentá."); setNewsAt(new Date());
     } catch (e) { setErrN(errMsg(e)); } finally { setLoadingN(false); }
   };
-  const render = (txt) => txt.split("\n").map((line, i) => <div key={i} dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") }} style={{ marginBottom: line.trim() ? 3 : 8 }} />);
+  function fmtAI(s) { return s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"); }
+  function renderInner(blk) {
+    const lines = blk.split("\n");
+    const hasBullets = lines.some(l => /^\s*[-•]\s/.test(l));
+    if (!hasBullets) return <div dangerouslySetInnerHTML={{ __html: fmtAI(lines.join(" ")) }} style={{ lineHeight: 1.55 }} />;
+    const items = []; let cur = null;
+    lines.forEach(l => { const m = l.match(/^\s*[-•]\s+(.*)$/); if (m) { if (cur != null) items.push(cur); cur = m[1]; } else { const t = l.trim(); if (!t) return; cur = cur == null ? t : cur + " " + t; } });
+    if (cur != null) items.push(cur);
+    return items.map((it, i) => (
+      <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, lineHeight: 1.5 }}>
+        <span className="cel" style={{ flexShrink: 0 }}>•</span>
+        <span dangerouslySetInnerHTML={{ __html: fmtAI(it) }} />
+      </div>
+    ));
+  }
+  const render = (txt) => {
+    const blocks = (txt || "").replace(/\r/g, "").split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+    return blocks.map((blk, bi) => {
+      if (/^-{3,}$/.test(blk)) return <div key={bi} style={{ borderTop: "1px solid var(--line)", margin: "12px 0" }} />;
+      const lines = blk.split("\n");
+      if (/^#{1,6}\s/.test(lines[0])) {
+        const head = lines[0].replace(/^#{1,6}\s*/, "").trim();
+        const body = lines.slice(1).join("\n").trim();
+        return (
+          <div key={bi} style={{ marginTop: bi ? 16 : 0, marginBottom: 8 }}>
+            <div className="eyebrow gold" style={{ fontSize: 12, letterSpacing: ".1em", marginBottom: 7 }} dangerouslySetInnerHTML={{ __html: fmtAI(head) }} />
+            {body && renderInner(body)}
+          </div>
+        );
+      }
+      return <div key={bi} style={{ marginBottom: 10 }}>{renderInner(blk)}</div>;
+    });
+  };
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {hasKeyVar && (
@@ -1733,7 +1766,7 @@ Reglas: viñetas con "-"; cada ítem con la FECHA y el medio entre paréntesis c
           <button className="btn-accent btn" onClick={runRisk} disabled={loadingR}>{loadingR ? <Loader2 size={15} className="spin" /> : <Brain size={15} />}{loadingR ? "Analizando…" : "Analizar riesgo"}</button>
         </div>
         {errR && <div style={{ color: "var(--loss)", fontSize: 12.5, marginTop: 12 }}><AlertTriangle size={12} /> {errR}</div>}
-        {riskOut && <div className="ai-out" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>{render(riskOut)}</div>}
+        {riskOut && <div className="ai-out" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>{riskAt && <div className="muted mono" style={{ fontSize: 10.5, marginBottom: 10 }}>Generado {riskAt.toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} hs</div>}{render(riskOut)}</div>}
       </div>
       <div className="panel" style={{ padding: 22 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -1742,7 +1775,7 @@ Reglas: viñetas con "-"; cada ítem con la FECHA y el medio entre paréntesis c
           <button className="btn" onClick={runNews} disabled={loadingN}>{loadingN ? <Loader2 size={15} className="spin" /> : <Newspaper size={15} />}{loadingN ? "Buscando…" : "Traer noticias"}</button>
         </div>
         {errN && <div style={{ color: "var(--loss)", fontSize: 12.5, marginTop: 12 }}><AlertTriangle size={12} /> {errN}</div>}
-        {newsOut && <div className="ai-out" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>{render(newsOut)}</div>}
+        {newsOut && <div className="ai-out" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--line)" }}>{newsAt && <div className="muted mono" style={{ fontSize: 10.5, marginBottom: 10 }}>Generado {newsAt.toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} hs</div>}{render(newsOut)}</div>}
       </div>
     </div>
   );
