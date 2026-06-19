@@ -881,31 +881,41 @@ function ImportModal({ onClose, setHoldings }) {
 function Ritmo({ rate, totals, pnlUSD, refRate }) {
   if (!rate) return <div className="empty">Sin datos suficientes.</div>;
   const since = new Date(rate.firstMs).toLocaleDateString("es-AR");
-  const card = (label, v, big) => (
-    <div className="rate-card" style={big ? { background: "linear-gradient(135deg,#1A2A24,#15211C)", borderColor: "#2C5A47" } : {}}>
-      <div className="eyebrow">{label}</div>
-      <div className={"kpi-num " + (v >= 0 ? "gain" : "loss")} style={{ fontSize: big ? 28 : 22, marginTop: 8 }}>{(v >= 0 ? "+" : "") + fmtUSD(v)}</div>
-      <div className="mono muted" style={{ fontSize: 11, marginTop: 3 }}>{fmtARS(v * (refRate || 1))}</div></div>
-  );
+  const cost = rate.val - rate.pnl;
+  const yearsSpan = Math.max(rate.days / 365.25, 0.05);
+  const annSpan = cost > 0 ? (Math.pow(rate.val / cost, 1 / yearsSpan) - 1) * 100 : 0;
+  const pnlPctTotal = cost > 0 ? rate.pnl / cost * 100 : 0;
+  const up = rate.pnl >= 0;
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div className="panel" style={{ padding: 24, background: "linear-gradient(135deg,#16212B,#131C24)", border: "1px solid #2C5A47" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
           <Gauge size={16} className="gain" />
-          <span className="eyebrow gain" style={{ letterSpacing: ".18em" }}>● Ritmo actual — lo que estás generando hoy</span>
+          <span className="eyebrow gain" style={{ letterSpacing: ".16em" }}>Tu rendimiento hasta hoy · sin cripto</span>
         </div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 18 }}>A tu retorno anualizado real de <strong className="gold">{fmtPct(rate.ann)}</strong> (CAGR, <strong>sin contar cripto</strong>), tu cartera invertida de {fmtUSD(rate.val)} está generando a este ritmo:</p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {card("Por día", rate.run.d, true)}{card("Por semana", rate.run.w)}{card("Por mes", rate.run.m)}{card("Por año", rate.run.y)}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-end" }}>
+          <div>
+            <div className="eyebrow">Ganancia total acumulada</div>
+            <div className={"kpi-num " + (up ? "gain" : "loss")} style={{ fontSize: 38, marginTop: 6 }}>{(up ? "+" : "") + fmtUSD(rate.pnl)}</div>
+            <div className={"mono " + (up ? "gain" : "loss")} style={{ fontSize: 13, marginTop: 2 }}>{fmtPct(pnlPctTotal)} sobre lo invertido</div>
+          </div>
+          <div>
+            <div className="eyebrow cel">Rendimiento anualizado</div>
+            <div className="kpi-num gold" style={{ fontSize: 30, marginTop: 6 }}>{fmtPct(annSpan)}<span style={{ fontSize: 15 }}>/año</span></div>
+            <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>promedio de todo el período</div>
+          </div>
         </div>
-        <p className="muted" style={{ fontSize: 11, marginTop: 14, lineHeight: 1.5 }}><AlertTriangle size={11} style={{ verticalAlign: -1 }} /> Indicativo, no garantizado. Excluye cripto porque su precio depende del ciclo (post-halving, bull/bear) y distorsiona el ritmo.</p>
+        <p className="muted" style={{ fontSize: 12, marginTop: 18, lineHeight: 1.55 }}>Sobre <strong>{fmtUSD(rate.val)}</strong> invertidos (sin cripto), desde tu primera compra el <strong>{since}</strong> — hace <strong>{yearsSpan.toFixed(1)} años</strong>.</p>
       </div>
+
       <div className="panel" style={{ padding: 22 }}>
-        <div className="eyebrow muted" style={{ marginBottom: 4 }}>○ Promedio histórico — ganancia repartida en el tiempo</div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Tu resultado total (sin cripto) de <strong className={rate.pnl >= 0 ? "gain" : "loss"}>{fmtUSD(rate.pnl)}</strong>, repartido sobre los <strong>{Math.round(rate.days)} días</strong> desde tu primera compra ({since}). Promedio simple, no anualizado.</p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {card("Por día", rate.avg.d)}{card("Por semana", rate.avg.w)}{card("Por mes", rate.avg.m)}{card("Por año", rate.avg.y)}
+        <div className="eyebrow muted" style={{ marginBottom: 12 }}>Cómo se reparte esa ganancia en el tiempo · promedio del pasado</div>
+        <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+          <div><div className="eyebrow">Por mes (promedio)</div><div className="kpi-num gain" style={{ fontSize: 22, marginTop: 4 }}>+{fmtUSD(rate.avg.m)}</div></div>
+          <div><div className="eyebrow">Por año (promedio)</div><div className="kpi-num gain" style={{ fontSize: 22, marginTop: 4 }}>+{fmtUSD(rate.avg.y)}</div></div>
         </div>
+        <p className="muted" style={{ fontSize: 11, marginTop: 16, lineHeight: 1.55 }}><AlertTriangle size={11} style={{ verticalAlign: -1 }} /> Es un <strong>promedio del pasado, no un ingreso fijo</strong>: los días reales suben y bajan fuerte. Buena parte de esta ganancia vino del rally de bonos argentinos, que difícilmente se repita. No es garantía a futuro.</p>
+        <p className="muted" style={{ fontSize: 10.5, marginTop: 8, lineHeight: 1.5 }}>Nota técnica: si en lugar de promediar sobre todo el período lo anualizás sobre el tiempo que tu plata estuvo realmente invertida (metiste buena parte del capital hace poco), el número sube a ~{fmtPct(rate.ann)}/año. Las dos miradas son válidas; la de arriba ({fmtPct(annSpan)}/año) es la más conservadora y representativa.</p>
       </div>
     </div>
   );
@@ -1455,7 +1465,12 @@ function Proyeccion({ rows, settings, setSettings, classStats }) {
             <button key={n} className="btn btn-ghost" style={{ flex: 1, fontSize: 11, padding: "7px 4px" }} onClick={() => setPreset(n)}>{n}</button>
           ))}
         </div>
-        <div className="eyebrow" style={{ marginBottom: 8 }}>Retorno anual esperado por clase (%)</div>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Retorno anual esperado por clase (%)</div>
+        <p className="muted" style={{ fontSize: 10.5, marginBottom: 10, lineHeight: 1.45 }}>Editá el <strong className="cel">% anual que esperás</strong> de cada clase de acá en adelante: es lo que mueve la proyección. El "<span className="mono">hist.</span>" al lado es lo que rindió en total desde que compraste — solo referencia, no entra en la cuenta.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 66px", gap: 10, marginBottom: 7 }}>
+          <span className="eyebrow" style={{ fontSize: 9 }}>Clase · histórico</span>
+          <span className="eyebrow" style={{ fontSize: 9, textAlign: "center", color: "var(--celeste)" }}>%/año esp.</span>
+        </div>
         {CLASSES.filter(c => c !== "CRYPTO" && valByClass[c]).map(c => {
           const st = classStats[c]; const histTot = (st && st.cost) ? (st.value / st.cost - 1) * 100 : null;
           return (
@@ -1514,6 +1529,10 @@ function Historico() {
   );
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <div className="panel" style={{ padding: "12px 16px", background: "rgba(116,172,223,.06)", border: "1px solid #74ACDF44", display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <History size={15} className="cel" style={{ flexShrink: 0, marginTop: 2 }} />
+        <p className="muted" style={{ fontSize: 11.5, margin: 0, lineHeight: 1.55 }}>Acá ves tus <strong className="cel">dos historias por separado</strong> — no es la cartera consolidada. Arriba: <strong>Balanz</strong> (datos oficiales del broker). Abajo: <strong>Allaria</strong> (reconstrucción aproximada en dólares). Son fotos a una fecha, no se actualizan solas; Nexo/cripto no expone este desglose.</p>
+      </div>
       <div className="panel" style={{ padding: "22px 24px", background: "linear-gradient(135deg,#16212B,#131C24)" }}>
         <div className="eyebrow">Resultado histórico Balanz · desde {H.desde}</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 36, marginTop: 12, alignItems: "flex-end" }}>
@@ -1525,7 +1544,7 @@ function Historico() {
       </div>
 
       <div className="panel" style={{ padding: 20 }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>Cómo se construyó tu cuenta (US$)</div>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Cómo se construyó tu cuenta de Balanz (US$)</div>
         <p className="muted" style={{ fontSize: 11.5, marginBottom: 18 }}>De US$ 0 en 2017 a US$ {fmt(H.valorFinal, 0)} hoy. La clave: <strong className="cel">{fmtUSD(capitalNeto)}</strong> que aportaste de tu bolsillo + <strong className="gain">{fmtUSD(ganancia)}</strong> que generó solo sosteniendo posiciones.</p>
 
         {/* barra principal: capital vs ganancia */}
@@ -1633,8 +1652,8 @@ function IA({ rows, totals, macro, pnlPct }) {
   const saveKey = () => { if (typeof window !== "undefined") { window.__ANTHROPIC_KEY__ = keyInput.trim(); try { localStorage.setItem("ANTHROPIC_KEY", keyInput.trim()); } catch {} } setKeySaved(!!keyInput.trim()); };
   const needKey = hasKeyVar && !keySaved; // estamos en HTML local sin key cargada
   const portfolioStr = () => rows.map(r => `${r.ticker} (${CLASS_LABEL[r.cls]}): ${((r.m.valUSD / totals.valUSD) * 100).toFixed(1)}%, P&L USD ${fmtPct(r.m.pnlPctUSD)}`).join("; ");
-  const callClaude = async (prompt, search) => {
-    const body = { model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] };
+  const callClaude = async (prompt, search, maxTokens) => {
+    const body = { model: "claude-sonnet-4-6", max_tokens: maxTokens || 1000, messages: [{ role: "user", content: prompt }] };
     if (search) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
     const headers = { "Content-Type": "application/json" };
     const k = (typeof window !== "undefined") && window.__ANTHROPIC_KEY__;
@@ -1662,9 +1681,17 @@ Buscá en la web el contexto MÁS ACTUAL de Argentina (cepo/BCRA, CNV, situació
     if (needKey) { setErrN("Pegá tu API key de Anthropic arriba para activar la IA."); return; }
     setLoadingN(true); setErrN(""); setNewsOut("");
     try {
-      const top = [...rows].sort((a, b) => b.m.valUSD - a.m.valUSD).slice(0, 6).map(r => r.ticker).join(", ");
-      const p = `Sos analista de mercado. Buscá en la web las noticias MÁS RECIENTES y relevantes (últimas semanas) que puedan mover el precio de estos activos de una cartera argentina: ${top}. Priorizá balances/resultados, cambios de management, M&A, decisiones regulatorias y macro argentina. Formato por activo, máx 2 ítems: **TICKER** luego "- [titular] — por qué importa". Omití los que no tengan novedades. Máx 350 palabras, con fechas.`;
-      setNewsOut(await callClaude(p, true) || "Sin noticias relevantes ahora. Reintentá.");
+      const top = [...rows].sort((a, b) => b.m.valUSD - a.m.valUSD).slice(0, 7).map(r => r.ticker).join(", ");
+      const hoy = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
+      const p = `Sos un analista de mercado para un inversor argentino. Hoy es ${hoy}. Buscá en la web las noticias financieras MÁS RECIENTES (de hoy y los últimos días). Priorizá fuentes argentinas en español — Ámbito Financiero (ambito.com), El Cronista (cronista.com) e Infobae — y para lo internacional, fuentes en español (Reuters/Bloomberg en Línea, Investing.com en español). Respondé SIEMPRE en español rioplatense.
+
+Estructurá en TRES bloques:
+**PANORAMA ARGENTINO** — máx 3 ítems: dólar/BCRA/cepo, riesgo país y bonos, y lo más relevante del día.
+**PANORAMA GLOBAL** — máx 3 ítems: Fed/tasas, S&P 500/Nasdaq, y lo más relevante del día.
+**TUS ACTIVOS** — solo los que tengan novedad real, de esta lista: ${top}. Por cada uno: **TICKER** y luego "- [titular] — por qué te importa".
+
+Reglas: viñetas con "-"; cada ítem con la FECHA y el medio entre paréntesis cuando puedas. Concreto, sin relleno. Máx 450 palabras. Información objetiva, sin recomendar comprar/vender.`;
+      setNewsOut(await callClaude(p, true, 1600) || "Sin noticias relevantes ahora. Reintentá.");
     } catch (e) { setErrN(errMsg(e)); } finally { setLoadingN(false); }
   };
   const render = (txt) => txt.split("\n").map((line, i) => <div key={i} dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") }} style={{ marginBottom: line.trim() ? 3 : 8 }} />);
@@ -1695,7 +1722,7 @@ Buscá en la web el contexto MÁS ACTUAL de Argentina (cepo/BCRA, CNV, situació
       <div className="panel" style={{ padding: 22 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div style={{ maxWidth: 560 }}><h3 style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><Newspaper size={18} className="gold" />Noticias que mueven tus activos</h3>
-            <p className="muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.55 }}>Búsqueda en vivo de balances, resultados, management y catalizadores macro para tus principales tenencias.</p></div>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.55 }}>Búsqueda en vivo de lo último de <strong className="cel">Ámbito, El Cronista</strong> e internacionales (en español): panorama argentino, global y novedades de tus principales tenencias, con fechas.</p></div>
           <button className="btn" onClick={runNews} disabled={loadingN}>{loadingN ? <Loader2 size={15} className="spin" /> : <Newspaper size={15} />}{loadingN ? "Buscando…" : "Traer noticias"}</button>
         </div>
         {errN && <div style={{ color: "var(--loss)", fontSize: 12.5, marginTop: 12 }}><AlertTriangle size={12} /> {errN}</div>}
