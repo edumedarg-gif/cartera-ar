@@ -973,7 +973,7 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
       usd: (o.usd != null && o.usd !== "") ? o.usd : (o.mep ? round2(o.montoARS / o.mep) : null),
     })).sort((a, b) => b.date.localeCompare(a.date));
   }, [ops]);
-  const [op, setOp] = useState({ date: today(), broker: "BALANZ", ticker: "", cls: "CEDEAR", qty: "", price: "", currency: "ARS", mep: "" });
+  const [op, setOp] = useState({ date: today(), broker: "BALANZ", ticker: "", cls: "CEDEAR", mode: "qty", qty: "", price: "", currency: "ARS", mep: "", montoARS: "", usdNeto: "" });
   const [msg, setMsg] = useState("");
   const [fy, setFy] = useState("todos"), [fm, setFm] = useState("todos"), [fa, setFa] = useState("todos"), [fb, setFb] = useState("todos");
 
@@ -998,19 +998,46 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
     return Object.entries(m).map(([mes, usd]) => ({ mes, usd })).sort((a, b) => a.mes.localeCompare(b.mes));
   }, [filtered]);
 
+  // Vista previa del cálculo (cantidad, USD, costo, MEP efectivo) según el modo
+  const prev = (() => {
+    const price = +op.price, mep = +op.mep || refRate || 1;
+    if (op.mode === "monto") {
+      const m = +op.montoARS; if (!m || !price) return null;
+      const usd = +op.usdNeto || m / mep;
+      const qty = op.currency === "USD" ? usd / price : m / price;
+      return { qty, usd, ars: m, mep: usd ? m / usd : mep };
+    }
+    const q = +op.qty; if (!q || !price) return null;
+    const ars = op.currency === "ARS" ? q * price : q * price * mep;
+    const usd = op.currency === "USD" ? q * price : q * price / mep;
+    return { qty: q, usd, ars, mep: usd ? ars / usd : mep };
+  })();
+
   const registerOp = () => {
-    const qty = +op.qty, price = +op.price, mep = +op.mep || refRate || 1, tk = op.ticker.toUpperCase().trim();
-    if (!qty || !price || !tk) { setMsg("Completá ticker, nominales y precio."); return; }
-    const addARS = op.currency === "ARS" ? qty * price : qty * price * mep;
-    const addUSD = op.currency === "USD" ? qty * price : qty * price / mep;
+    const tk = op.ticker.toUpperCase().trim(), price = +op.price, mep = +op.mep || refRate || 1;
+    if (!tk) { setMsg("Completá el activo (ticker)."); return; }
+    let qty, addARS, addUSD;
+    if (op.mode === "monto") {
+      const montoARS = +op.montoARS;
+      if (!montoARS || !price) { setMsg("Completá monto en ARS y precio."); return; }
+      addARS = montoARS;
+      addUSD = +op.usdNeto || montoARS / mep;
+      qty = op.currency === "USD" ? addUSD / price : montoARS / price;
+    } else {
+      qty = +op.qty;
+      if (!qty || !price) { setMsg("Completá nominales y precio."); return; }
+      addARS = op.currency === "ARS" ? qty * price : qty * price * mep;
+      addUSD = op.currency === "USD" ? qty * price : qty * price / mep;
+    }
+    const opMep = addUSD ? round2(addARS / addUSD) : round2(mep);
     setHoldings(hs => {
       const i = hs.findIndex(h => h.ticker === tk && h.broker === op.broker);
       if (i >= 0) { const h = hs[i]; return hs.map((x, j) => j === i ? { ...h, qty: (+h.qty || 0) + qty, investedARS: (+h.investedARS || 0) + addARS, investedUSD: (+h.investedUSD || 0) + addUSD, manualPrice: price, costEstimated: false } : x); }
       return [...hs, { id: uid(), ticker: tk, name: tk, cls: op.cls, broker: op.broker, currency: op.currency, qty, investedARS: addARS, investedUSD: addUSD, manualPrice: price, coingeckoId: CRYPTO_IDS[tk] || "", firstDate: op.date, costEstimated: false, liveAt: null }];
     });
-    setOps(o2 => [...(o2 || []), { date: op.date, broker: op.broker, activo: tk, montoARS: round2(addARS), mep: round2(mep), usd: round2(addUSD) }]);
-    setMsg("✓ " + tk + ": +" + fmt(qty, qty < 1 ? 4 : 0) + " en " + op.broker + " (US$ " + fmt(addUSD, 0) + ")");
-    setOp(o => ({ ...o, ticker: "", qty: "", price: "", mep: "" }));
+    setOps(o2 => [...(o2 || []), { date: op.date, broker: op.broker, activo: tk, montoARS: round2(addARS), mep: opMep, usd: round2(addUSD) }]);
+    setMsg("✓ " + tk + ": +" + fmt(qty, qty < 1 ? 6 : 0) + " en " + op.broker + " (US$ " + fmt(addUSD, 0) + ")");
+    setOp(o => ({ ...o, ticker: "", qty: "", price: "", mep: "", montoARS: "", usdNeto: "" }));
   };
 
   const download = () => {
@@ -1072,20 +1099,29 @@ function Aportes({ aportes, setAportes, aportesUSD, valUSD, setHoldings, refRate
 
       <div className="panel" style={{ padding: 20 }}>
         <div className="eyebrow" style={{ marginBottom: 4 }}>Registrar nueva operación de compra</div>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>Cargá una compra: se suma al registro de arriba Y actualiza tu cartera (si ya tenés el activo, suma nominales y recalcula el costo; si es nuevo, lo crea). El MEP del día es opcional.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, alignItems: "end" }}>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>Se suma al registro Y actualiza tu cartera. Para <strong className="cel">cripto</strong> o cuando sabés cuántos pesos pusiste, usá <strong>Por monto</strong>: cargás lo que pagaste y los dólares que recibiste, y la app calcula la cantidad y captura la comisión. Para acciones donde sabés los nominales, usá <strong>Por nominales</strong>.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", marginBottom: 10 }}>
           <div className="field"><label>Fecha</label><input className="input" type="date" value={op.date} onChange={e => setOp(o => ({ ...o, date: e.target.value }))} /></div>
           <div className="field"><label>Broker</label><select className="sel" value={op.broker} onChange={e => setOp(o => ({ ...o, broker: e.target.value }))}>{BROKERS.map(b => <option key={b}>{b}</option>)}</select></div>
-          <div className="field"><label>Activo</label><input className="input" placeholder="AL30" value={op.ticker} onChange={e => setOp(o => ({ ...o, ticker: e.target.value }))} /></div>
+          <div className="field"><label>Activo</label><input className="input" placeholder="BTC" value={op.ticker} onChange={e => setOp(o => ({ ...o, ticker: e.target.value }))} /></div>
           <div className="field"><label>Clase</label><select className="sel" value={op.cls} onChange={e => setOp(o => ({ ...o, cls: e.target.value }))}>{CLASSES.map(c => <option key={c} value={c}>{CLASS_LABEL[c]}</option>)}</select></div>
-          <div className="field"><label>Nominales</label><input className="input mono" type="number" placeholder="100" value={op.qty} onChange={e => setOp(o => ({ ...o, qty: e.target.value }))} /></div>
-          <div className="field"><label>Precio</label><input className="input mono" type="number" placeholder="936.5" value={op.price} onChange={e => setOp(o => ({ ...o, price: e.target.value }))} /></div>
-          <div className="field"><label>Moneda</label><select className="sel" value={op.currency} onChange={e => setOp(o => ({ ...o, currency: e.target.value }))}><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
+          <div className="field"><label>Modo de carga</label><select className="sel" value={op.mode} onChange={e => setOp(o => ({ ...o, mode: e.target.value }))}><option value="qty">Por nominales</option><option value="monto">Por monto $</option></select></div>
+          <div className="field"><label>Moneda del precio</label><select className="sel" value={op.currency} onChange={e => setOp(o => ({ ...o, currency: e.target.value }))}><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
-          <div className="field" style={{ maxWidth: 160 }}><label>MEP del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1452"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
-          <button className="btn-accent btn" style={{ marginTop: 18 }} onClick={registerOp}><Plus size={14} />Registrar compra</button>
-          {msg && <span className="mono" style={{ fontSize: 12, marginTop: 18, color: msg.startsWith("✓") ? "var(--gain)" : "var(--loss)" }}>{msg}</span>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end" }}>
+          {op.mode === "qty"
+            ? <div className="field"><label>Nominales</label><input className="input mono" type="number" placeholder="100" value={op.qty} onChange={e => setOp(o => ({ ...o, qty: e.target.value }))} /></div>
+            : <>
+                <div className="field"><label>Monto ARS (total pagado)</label><input className="input mono" type="number" placeholder="3000000" value={op.montoARS} onChange={e => setOp(o => ({ ...o, montoARS: e.target.value }))} /></div>
+                <div className="field"><label>USD recibido (opcional)</label><input className="input mono" type="number" placeholder="1935.11" value={op.usdNeto} onChange={e => setOp(o => ({ ...o, usdNeto: e.target.value }))} /></div>
+              </>}
+          <div className="field"><label>Precio del activo</label><input className="input mono" type="number" placeholder="62525.08" value={op.price} onChange={e => setOp(o => ({ ...o, price: e.target.value }))} /></div>
+          <div className="field"><label>MEP del día (opcional)</label><input className="input mono" type="number" placeholder={refRate ? fmt(refRate, 0) : "1543"} value={op.mep} onChange={e => setOp(o => ({ ...o, mep: e.target.value }))} /></div>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+          <button className="btn-accent btn" onClick={registerOp}><Plus size={14} />Registrar compra</button>
+          {prev && <span className="mono muted" style={{ fontSize: 12 }}>→ +{fmt(prev.qty, prev.qty < 1 ? 6 : 2)} {op.ticker.toUpperCase() || "?"} · US$ {fmt(prev.usd, 0)} · costo {fmtARS(prev.ars)} · MEP efectivo {fmt(prev.mep, 0)}</span>}
+          {msg && <span className="mono" style={{ fontSize: 12, color: msg.startsWith("✓") ? "var(--gain)" : "var(--loss)" }}>{msg}</span>}
         </div>
       </div>
     </div>
