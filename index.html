@@ -25,7 +25,7 @@ window.__ANTHROPIC_KEY__ = localStorage.getItem('ANTHROPIC_KEY') || '';
 <script type="text/babel" data-type="module" data-presets="react">
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import * as XLSX from "xlsx";
@@ -1338,50 +1338,152 @@ function Proyeccion({ rows, settings, setSettings, classStats }) {
   const valByClass = useMemo(() => { const m = {}; rows.filter(r => r.cls !== "CRYPTO").forEach(r => { m[r.cls] = (m[r.cls] || 0) + r.m.valUSD; }); return m; }, [rows]);
   const totalNow = Object.values(valByClass).reduce((a, b) => a + b, 0);
   const monthly = +settings.monthlyAporteUSD || 0;
-  // retorno usado por clase: override del usuario si existe, si no el real de la cartera
+  const years = settings.projYears || 10;
+  // retornos ANUALES esperados hacia adelante (estimaciones sobrias, NO el histórico)
+  const DEF = { EFECTIVO: 3, FCI: 3.5, BONO_NAC: 6, BONO_CORP: 7, MERVAL: 8, CEDEAR: 7, ETF: 7, ACCION_INT: 7 };
+  const PRESETS = {
+    Conservador: DEF,
+    Base: { ...DEF, BONO_NAC: 7, BONO_CORP: 8, MERVAL: 10, CEDEAR: 9, ETF: 9, ACCION_INT: 9 },
+    Optimista: { ...DEF, BONO_NAC: 8, BONO_CORP: 9, MERVAL: 12, CEDEAR: 11, ETF: 11, ACCION_INT: 11 },
+  };
+  // amplitud del rango (± pp) por clase: más volátil = banda más ancha
+  const SPREAD = { EFECTIVO: 1, FCI: 1, BONO_NAC: 2, BONO_CORP: 2.5, MERVAL: 5, CEDEAR: 4, ETF: 4, ACCION_INT: 4 };
   const ovr = settings.projReturns || {};
-  const retOf = (c) => ovr[c] != null ? ovr[c] : Math.round((classStats[c]?.ann || 0) * 10) / 10;
-  const series = useMemo(() => {
-    const out = [{ year: 0, base: totalNow, conAportes: totalNow }]; let base = totalNow, conA = totalNow;
-    const wRet = totalNow ? Object.entries(valByClass).reduce((s, [c, v]) => s + v * (retOf(c) / 100), 0) / totalNow : 0;
-    for (let y = 1; y <= 10; y++) { base = base * (1 + wRet); conA = conA * (1 + wRet) + monthly * 12; out.push({ year: y, base, conAportes: conA }); }
-    return { out, wRet };
-  }, [valByClass, totalNow, settings, monthly, classStats]);
-  const usarReal = () => setSettings(s => ({ ...s, projReturns: {} }));
+  const retOf = (c) => ovr[c] != null ? ovr[c] : (DEF[c] != null ? DEF[c] : 5);
+  const spreadOf = (c) => SPREAD[c] != null ? SPREAD[c] : 3;
+  const destino = settings.projDestino || "ETF"; // dónde caen los aportes nuevos
+  const GROUP = { global: ["CEDEAR", "ETF"], arg: ["BONO_NAC", "MERVAL", "BONO_CORP"], liq: ["EFECTIVO", "FCI"] };
+  const wOf = (pc, keys) => keys.reduce((s, k) => s + (pc[k] || 0), 0);
+  const setPreset = (name) => setSettings(s => ({ ...s, projReturns: { ...PRESETS[name] } }));
+
+  // proyecta la cartera año a año dado un set de retornos y un aporte mensual
+  const runSeries = (retFn, monthlyVal, nYears) => {
+    const tot = (pc) => Object.values(pc).reduce((a, b) => a + b, 0);
+    const destKey = destino === "ETF" ? (valByClass.ETF != null ? "ETF" : "CEDEAR") : null;
+    let A = { ...valByClass };
+    const pt = (y, a) => { const t = tot(a); return { year: y, total: t, globalPct: t ? wOf(a, GROUP.global) / t * 100 : 0, argPct: t ? wOf(a, GROUP.arg) / t * 100 : 0 }; };
+    const out = [pt(0, A)];
+    for (let y = 1; y <= nYears; y++) {
+      const nA = {};
+      Object.keys(A).forEach(c => { nA[c] = A[c] * (1 + retFn(c) / 100); });
+      const annual = monthlyVal * 12;
+      if (destino === "PROP") { const t = tot(nA); Object.keys(nA).forEach(c => { nA[c] += annual * (t ? nA[c] / t : 0); }); }
+      else { nA[destKey] = (nA[destKey] || 0) + annual; }
+      A = nA; out.push(pt(y, A));
+    }
+    return out;
+  };
+
+  const data = useMemo(() => {
+    const retC = (c) => retOf(c), retLo = (c) => retOf(c) - spreadOf(c), retHi = (c) => retOf(c) + spreadOf(c);
+    const central = runSeries(retC, monthly, years);
+    const lo = runSeries(retLo, monthly, years);
+    const hi = runSeries(retHi, monthly, years);
+    const base = runSeries(retC, 0, years);
+    return central.map((p, i) => ({ year: p.year, central: p.total, low: lo[i].total, high: hi[i].total, range: hi[i].total - lo[i].total, base: base[i].total, globalPct: p.globalPct, argPct: p.argPct }));
+  }, [valByClass, totalNow, monthly, settings]);
+
+  const last = data[data.length - 1];
+  const wRet = totalNow ? Object.entries(valByClass).reduce((s, [c, v]) => s + v * (retOf(c) / 100), 0) / totalNow : 0;
+  const arg0 = totalNow ? wOf(valByClass, GROUP.arg) / totalNow * 100 : 0;
+  const glob0 = totalNow ? wOf(valByClass, GROUP.global) / totalNow * 100 : 0;
+  const aportadoTot = monthly * 12 * years;
+
+  // goal-seek: aporte mensual necesario para llegar a la meta (escenario esperado)
+  const target = +settings.projTarget || 0;
+  const reqMonthly = useMemo(() => {
+    if (!target || target <= 0) return null;
+    const fin = (mv) => { const s = runSeries((c) => retOf(c), mv, years); return s[s.length - 1].total; };
+    if (fin(0) >= target) return 0;
+    let lo = 0, hi = 200000;
+    if (fin(hi) < target) return -1;
+    for (let k = 0; k < 44; k++) { const mid = (lo + hi) / 2; if (fin(mid) < target) lo = mid; else hi = mid; }
+    return hi;
+  }, [target, valByClass, totalNow, settings]);
+
+  const ttBox = { background: "#0D1318", border: "1px solid #2A3946", borderRadius: 9, padding: "9px 12px", fontSize: 12 };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16 }}>
       <div className="panel" style={{ padding: 20 }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>Proyección a 10 años · cartera invertida sin cripto</div>
-        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Parte de tu valor real ({fmtUSD(totalNow)}) y del <strong>rendimiento anualizado real de cada clase</strong> tomado de Cartera. Retorno ponderado: <strong className="gold">{fmtPct(series.wRet * 100)}</strong>. Editá los supuestos si querés simular otro escenario.</p>
-        <ResponsiveContainer width="100%" height={300}><AreaChart data={series.out}>
-          <defs><linearGradient id="gA" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#43C28A" stopOpacity={.4} /><stop offset="100%" stopColor="#43C28A" stopOpacity={0} /></linearGradient>
-          <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#74ACDF" stopOpacity={.35} /><stop offset="100%" stopColor="#74ACDF" stopOpacity={0} /></linearGradient></defs>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>Proyección a {years} años · cartera invertida sin cripto</div>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>La línea verde es el <strong className="gain">escenario esperado</strong> ({fmtPct(wRet * 100)}/año ponderado); la <strong>banda</strong> es el rango pesimista–optimista, porque los mercados no rinden parejo. La punteada celeste es <strong>sin aportes</strong>. Aportes nuevos → <strong className="cel">{destino === "PROP" ? "mezcla actual" : "RV global"}</strong>.</p>
+        <ResponsiveContainer width="100%" height={250}><ComposedChart data={data}>
+          <defs><linearGradient id="gBand" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#43C28A" stopOpacity={.26} /><stop offset="100%" stopColor="#43C28A" stopOpacity={.04} /></linearGradient></defs>
           <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
           <XAxis dataKey="year" stroke="#5C6F7E" fontSize={11} tickFormatter={v => "A" + v} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
-          <Tooltip contentStyle={ttStyle} formatter={(v, n) => [fmtUSD(v), n === "conAportes" ? "Con aportes" : "Solo capitalización"]} labelFormatter={l => "Año " + l} />
-          <Area type="monotone" dataKey="conAportes" stroke="#43C28A" strokeWidth={2} fill="url(#gA)" />
-          <Area type="monotone" dataKey="base" stroke="#74ACDF" strokeWidth={2} fill="url(#gB)" /></AreaChart></ResponsiveContainer>
-        <div style={{ display: "flex", gap: 24, marginTop: 8 }}>
-          <div><div className="eyebrow">10 años s/aportes</div><div className="kpi-num cel" style={{ fontSize: 20, marginTop: 4 }}>{fmtUSD(series.out[10].base)}</div></div>
-          <div><div className="eyebrow gain">10 años con aportes</div><div className="kpi-num gain" style={{ fontSize: 20, marginTop: 4 }}>{fmtUSD(series.out[10].conAportes)}</div></div>
+          <Tooltip content={({ active, payload, label }) => {
+            if (!active || !payload || !payload.length) return null;
+            const d = payload[0].payload;
+            return (<div style={ttBox}>
+              <div style={{ color: "#9FB0BD", marginBottom: 4 }}>Año {label}</div>
+              <div style={{ color: "#43C28A", fontWeight: 600 }}>Esperado: {fmtUSD(d.central)}</div>
+              <div className="muted">Rango: {fmtUSD(d.low)} – {fmtUSD(d.high)}</div>
+              <div className="muted">Sin aportes: {fmtUSD(d.base)}</div>
+            </div>);
+          }} />
+          <Area dataKey="low" stackId="band" stroke="none" fill="none" isAnimationActive={false} />
+          <Area dataKey="range" stackId="band" stroke="none" fill="url(#gBand)" isAnimationActive={false} />
+          <Line type="monotone" dataKey="central" stroke="#43C28A" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="base" stroke="#74ACDF" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+        </ComposedChart></ResponsiveContainer>
+        <div style={{ display: "flex", gap: 24, marginTop: 6, marginBottom: 14, flexWrap: "wrap" }}>
+          <div><div className="eyebrow">{years} años · sin aportes</div><div className="kpi-num cel" style={{ fontSize: 20, marginTop: 4 }}>{fmtUSD(last.base)}</div></div>
+          <div><div className="eyebrow gain">{years} años · con aportes (esperado)</div><div className="kpi-num gain" style={{ fontSize: 20, marginTop: 4 }}>{fmtUSD(last.central)}</div><div className="muted mono" style={{ fontSize: 10, marginTop: 2 }}>rango {fmtUSD(last.low)} – {fmtUSD(last.high)} · aportás {fmtUSD(aportadoTot)}</div></div>
         </div>
+        <div className="eyebrow" style={{ marginBottom: 6, marginTop: 4 }}>Peso en la cartera (%) · si los aportes van a RV global</div>
+        <ResponsiveContainer width="100%" height={170}><LineChart data={data} margin={{ top: 4, right: 10, bottom: 0, left: -16 }}>
+          <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+          <XAxis dataKey="year" stroke="#5C6F7E" fontSize={10} tickFormatter={v => "A" + v} /><YAxis stroke="#5C6F7E" fontSize={10} domain={[0, 70]} tickFormatter={v => v + "%"} />
+          <Tooltip contentStyle={ttStyle} formatter={(v, n) => [v.toFixed(0) + "%", n]} labelFormatter={l => "Año " + l} />
+          <Line type="monotone" dataKey="globalPct" name="RV global" stroke="#74ACDF" strokeWidth={2.5} dot={false} />
+          <Line type="monotone" dataKey="argPct" name="Argentina" stroke="#E0883B" strokeWidth={2.5} dot={false} />
+        </LineChart></ResponsiveContainer>
+        <p className="muted" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5 }}>Argentina pasa de <strong style={{ color: "#E0883B" }}>{arg0.toFixed(0)}%</strong> a <strong style={{ color: "#E0883B" }}>{last.argPct.toFixed(0)}%</strong> y RV global de <strong style={{ color: "#74ACDF" }}>{glob0.toFixed(0)}%</strong> a <strong style={{ color: "#74ACDF" }}>{last.globalPct.toFixed(0)}%</strong>, sin vender nada. La dilución es mecánica; los montos en US$ dependen de los retornos supuestos.</p>
       </div>
+
       <div className="panel" style={{ padding: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div className="eyebrow">Retorno anual por clase (%)</div>
-          <button className="btn-ghost btn" style={{ fontSize: 11, padding: "4px 8px" }} onClick={usarReal}>Usar real</button>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>Horizonte</div>
+        <div style={{ display: "flex", gap: 7, marginBottom: 16 }}>
+          {[5, 10, 20].map(n => (
+            <button key={n} className="btn btn-ghost" style={{ flex: 1, fontSize: 11.5, padding: "7px 4px", ...(years === n ? { borderColor: "var(--celeste)", color: "var(--celeste)", background: "rgba(116,172,223,.10)" } : {}) }} onClick={() => setSettings(s => ({ ...s, projYears: n }))}>{n} años</button>
+          ))}
         </div>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>Escenario central</div>
+        <div style={{ display: "flex", gap: 7, marginBottom: 16 }}>
+          {["Conservador", "Base", "Optimista"].map(n => (
+            <button key={n} className="btn btn-ghost" style={{ flex: 1, fontSize: 11, padding: "7px 4px" }} onClick={() => setPreset(n)}>{n}</button>
+          ))}
+        </div>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>Retorno anual esperado por clase (%)</div>
         {CLASSES.filter(c => c !== "CRYPTO" && valByClass[c]).map(c => {
-          const real = Math.round((classStats[c]?.ann || 0) * 10) / 10;
+          const st = classStats[c]; const histTot = (st && st.cost) ? (st.value / st.cost - 1) * 100 : null;
           return (
-            <div key={c} style={{ display: "grid", gridTemplateColumns: "1fr 70px", gap: 10, alignItems: "center", marginBottom: 9 }}>
-              <span style={{ fontSize: 12.5, color: CLASS_COLOR[c] }}>{CLASS_LABEL[c]}<span className="muted mono" style={{ fontSize: 10, marginLeft: 6 }}>real {fmtPct(real)}</span></span>
+            <div key={c} style={{ display: "grid", gridTemplateColumns: "1fr 66px", gap: 10, alignItems: "center", marginBottom: 9 }}>
+              <span style={{ fontSize: 12.5, color: CLASS_COLOR[c] }}>{CLASS_LABEL[c]}{histTot != null && <span className="muted mono" style={{ fontSize: 9.5, marginLeft: 6 }}>hist. {fmtPct(histTot)} total</span>}</span>
               <input className="input mono" type="number" value={retOf(c)} onChange={e => setSettings(s => ({ ...s, projReturns: { ...(s.projReturns || {}), [c]: +e.target.value } }))} /></div>);
         })}
         <div style={{ borderTop: "1px solid var(--line)", marginTop: 12, paddingTop: 12 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>¿A dónde van los aportes nuevos?</div>
+          <select className="sel" value={destino} onChange={e => setSettings(s => ({ ...s, projDestino: e.target.value }))} style={{ width: "100%", marginBottom: 12 }}>
+            <option value="ETF">RV global (SPY / ETF)</option>
+            <option value="PROP">Proporcional a la mezcla actual</option>
+          </select>
           <div className="eyebrow" style={{ marginBottom: 6 }}>Aporte mensual proyectado (US$)</div>
           <input className="input mono" type="number" value={settings.monthlyAporteUSD} onChange={e => setSettings(s => ({ ...s, monthlyAporteUSD: +e.target.value }))} /></div>
-        <p className="muted" style={{ fontSize: 10.5, marginTop: 12, lineHeight: 1.5 }}>Cripto queda fuera de la proyección: su retorno depende del ciclo y no es proyectable con un CAGR fijo.</p>
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: 12, paddingTop: 12 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Meta: ¿cuánto aportar por mes?</div>
+          <input className="input mono" type="number" placeholder={"Objetivo US$ a " + years + " años"} value={settings.projTarget || ""} onChange={e => setSettings(s => ({ ...s, projTarget: +e.target.value }))} style={{ width: "100%" }} />
+          {reqMonthly != null && (
+            reqMonthly === 0 ? <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.5 }}>Ya llegás a esa meta sin aportar nada (escenario esperado).</div>
+            : reqMonthly === -1 ? <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.5 }}>Meta muy alta para este horizonte. Subí el plazo o bajá el objetivo.</div>
+            : <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>Necesitás aportar <strong className="gold">{fmtUSD(reqMonthly)}/mes</strong> <span className="muted">por {years} años (escenario esperado).</span></div>
+                <button className="btn btn-ghost" style={{ fontSize: 11, padding: "5px 9px", marginTop: 8 }} onClick={() => setSettings(s => ({ ...s, monthlyAporteUSD: Math.round(reqMonthly) }))}>Usar este aporte</button>
+              </div>
+          )}
+        </div>
+        <p className="muted" style={{ fontSize: 10.5, marginTop: 12, lineHeight: 1.5 }}>Los retornos son <strong>estimaciones hacia adelante</strong>, no predicciones ni el histórico (el histórico total se muestra solo de referencia). Cripto queda afuera: su retorno depende del ciclo y no se proyecta con un CAGR fijo.</p>
       </div>
     </div>
   );
