@@ -954,9 +954,12 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
       { key: "crypto", label: "Cripto", pct: cryptoW, sev: sev(cryptoW),
         detail: cryTickers.join(" + "),
         note: "Volatilidad alta, atada al ciclo (halving / bull-bear)." },
-      { key: "top", label: "Mayor posición individual · " + topName, pct: top, sev: top >= 15 ? "alta" : top >= 9 ? "media" : "ok",
-        detail: "", note: "Un solo papel; si recorta fuerte, te pega de lleno." },
-    ].sort((a, b) => b.pct - a.pct);
+    ];
+    if (topRow && topRow.cls !== "CRYPTO" && topRow.cls !== "BONO_NAC") {
+      factors.push({ key: "top", label: "Mayor posición individual · " + topName, pct: top, sev: sev(top),
+        detail: "", note: "Un solo papel; si recorta fuerte, te pega de lleno." });
+    }
+    factors.sort((a, b) => b.pct - a.pct);
     const label = score < 28 ? "Conservadora" : score < 45 ? "Moderada" : score < 62 ? "Audaz" : "Agresiva";
     const color = score < 28 ? "#43C28A" : score < 45 ? "#8FB996" : score < 62 ? "#CBA45E" : "#E8604C";
     return { score, label, color, top, topName, cryptoW, sovW, factors };
@@ -1053,16 +1056,22 @@ function Evolucion({ rows, history, totals, base, money, refRate, aportes }) {
 
       <div className="panel" style={{ padding: 20 }}>
         <div className="eyebrow" style={{ marginBottom: 4 }}>Valor de cartera en el tiempo (US$)</div>
-        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Esta serie se construye <strong className="cel">hacia adelante</strong>: cada vez que apretás "Actualizar" se guarda una foto del valor total. Hoy arranca casi vacía y se va enriqueciendo día a día. La línea dorada punteada es tu capital aportado a la fecha de cada foto.</p>
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>Esta serie se construye <strong className="cel">hacia adelante</strong>: cada vez que apretás "Actualizar" se guarda una foto del valor total. Con pocos días casi no se mueve (es normal); cobra sentido en semanas y meses. El eje está acercado al rango real para que se note la variación. La línea dorada punteada es tu capital aportado a la fecha de cada foto.</p>
         {history.length < 2 ? <div className="empty" style={{ padding: 30 }}>Apretá "Actualizar" en distintos días para ir registrando la serie. (Mientras tanto, mirá la curva de aportes de arriba.)</div> :
-          <ResponsiveContainer width="100%" height={260}><AreaChart data={history}>
-            <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#74ACDF" stopOpacity={.5} /><stop offset="100%" stopColor="#74ACDF" stopOpacity={0} /></linearGradient></defs>
-            <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
-            <XAxis dataKey="date" stroke="#5C6F7E" fontSize={11} /><YAxis stroke="#5C6F7E" fontSize={11} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
-            <Tooltip contentStyle={ttStyle} formatter={(v, n) => [fmtUSD(v), n === "valUSD" ? "Cartera" : "Aportes"]} />
-            <Area type="monotone" dataKey="aportesUSD" stroke="#CBA45E" strokeWidth={1.5} fill="none" strokeDasharray="4 3" />
-            <Area type="monotone" dataKey="valUSD" stroke="#74ACDF" strokeWidth={2} fill="url(#g1)" />
-          </AreaChart></ResponsiveContainer>}
+          (() => {
+            const vals = history.flatMap(h => [h.valUSD, h.aportesUSD]).filter(v => v > 0);
+            const dMin = Math.min(...vals), dMax = Math.max(...vals);
+            const pad = Math.max((dMax - dMin) * 0.18, dMax * 0.03);
+            const yDom = [Math.max(0, Math.floor((dMin - pad) / 1000) * 1000), Math.ceil((dMax + pad) / 1000) * 1000];
+            return <ResponsiveContainer width="100%" height={260}><AreaChart data={history}>
+              <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#74ACDF" stopOpacity={.5} /><stop offset="100%" stopColor="#74ACDF" stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid stroke="#2A3946" strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="date" stroke="#5C6F7E" fontSize={11} /><YAxis stroke="#5C6F7E" fontSize={11} domain={yDom} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+              <Tooltip contentStyle={ttStyle} formatter={(v, n) => [fmtUSD(v), n === "valUSD" ? "Cartera" : "Aportes"]} />
+              <Area type="monotone" dataKey="aportesUSD" stroke="#CBA45E" strokeWidth={1.5} fill="none" strokeDasharray="4 3" />
+              <Area type="monotone" dataKey="valUSD" stroke="#74ACDF" strokeWidth={2} fill="url(#g1)" baseValue="dataMin" />
+            </AreaChart></ResponsiveContainer>;
+          })()}
       </div>
       <div className="panel" style={{ padding: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 2 }}>Composición por clase</div>
