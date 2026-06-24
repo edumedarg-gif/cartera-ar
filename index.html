@@ -166,7 +166,7 @@ function App() {
     (async () => {
       const _hV = await storeGet("inv7_holdingsV", 0);
       let hs;
-      if (_hV < 6) { hs = SEED_HOLDINGS; storeSet("inv7_holdings", SEED_HOLDINGS); storeSet("inv7_holdingsV", 6); }
+      if (_hV < 7) { hs = SEED_HOLDINGS; storeSet("inv7_holdings", SEED_HOLDINGS); storeSet("inv7_holdingsV", 7); }
       else hs = await storeGet("inv7_holdings", SEED_HOLDINGS);
       setHoldings(hs.map(h => (h.isCash || h.ticker === "USD-BAL" || h.ticker === "USD-ALL") ? { ...h, cls: "EFECTIVO" } : h));
       setAportes(await storeGet("inv6_aportes", SEED_APORTES));
@@ -213,7 +213,7 @@ function App() {
             return (best && best / cur <= 4 && best / cur >= 0.25) ? best : null;
           };
           setHoldings(hs => hs.map(h => {
-            if (h.cls === "EFECTIVO" || h.cls === "FCI" || h.cls === "CRYPTO") return h;
+            if (h.cls === "EFECTIVO" || h.cls === "FCI" || h.cls === "CRYPTO" || h.cls === "ACCION_INT") return h;
             const key = (h.ticker || "").toUpperCase().replace(/-A$/, "");
             const rawARS = +pr[key];
             if (!rawARS || rawARS <= 0) return h;
