@@ -32,7 +32,7 @@ import * as XLSX from "xlsx";
 import {
   Wallet, TrendingUp, TrendingDown, RefreshCw, Plus, Trash2, X,
   Brain, Newspaper, Upload, PiggyBank, LineChart as LineIcon, Layers,
-  AlertTriangle, Activity, Loader2, Pencil, ShieldCheck, Gauge, History, Coins, ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert,
+  AlertTriangle, Activity, Loader2, Pencil, ShieldCheck, Gauge, History, Coins, ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert, Target,
 } from "lucide-react";
 
 /* ============================== design system ============================== */
@@ -415,7 +415,7 @@ function App() {
           ))}
         </div>
 
-        {tab === "cartera" && <Cartera rows={rows} setHoldings={setHoldings} base={base} money={money} refRate={refRate} />}
+        {tab === "cartera" && <Cartera rows={rows} setHoldings={setHoldings} base={base} money={money} refRate={refRate} totals={totals} settings={settings} setSettings={setSettings} />}
         {tab === "ritmo" && <Ritmo rate={rate} totals={totals} pnlUSD={pnlUSD} refRate={refRate} />}
         {tab === "evolucion" && <Evolucion rows={rows} history={history} totals={totals} base={base} money={money} refRate={refRate} ops={ops} />}
         {tab === "aportes" && <Aportes aportes={aportes} setAportes={setAportes} aportesUSD={aportesUSD} valUSD={totals.valUSD} setHoldings={setHoldings} refRate={refRate} ops={ops} setOps={setOps} />}
@@ -647,8 +647,80 @@ function Kpi({ label, big, sub, tone, icon: Ic, tip }) {
     <div className={"mono " + (tone === "muted" ? "muted" : tone)} style={{ fontSize: 12, marginTop: 3 }}>{sub}</div></div>);
 }
 
+/* ============================== decisión: rebalanceo + stress ============================== */
+function DecisionPanel({ rows, totals, settings, setSettings }) {
+  const ARG = ["BONO_NAC", "BONO_CORP", "MERVAL"];
+  const argVal = rows.filter(r => ARG.includes(r.cls)).reduce((s, r) => s + r.m.valUSD, 0);
+  const totalVal = totals.valUSD || 0;
+  const argPct = totalVal ? argVal / totalVal * 100 : 0;
+  const target = settings.argTarget != null ? +settings.argTarget : 15;
+  const over = argPct - target;
+  const aporteToTarget = target > 0 && over > 0.3 ? (argVal * 100 / target - totalVal) : 0;
+  const monthly = +settings.monthlyAporteUSD || 0;
+  const yearsToTarget = monthly > 0 && aporteToTarget > 0 ? aporteToTarget / (monthly * 12) : null;
+  const slowDilution = yearsToTarget != null && yearsToTarget > 3;
+  const shocks = [{ lab: "Corrección", pct: 25 }, { lab: "Crisis / reperfilamiento", pct: 45 }];
+  const setTarget = v => setSettings(s => ({ ...s, argTarget: Math.max(0, Math.min(100, +v || 0)) }));
+  const aligned = over <= 0.3;
+  return (
+    <div className="panel" style={{ padding: 20, marginBottom: 16, border: "1px solid #2C5A47", background: "linear-gradient(135deg,#16212B,#131C24)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <Target size={15} className="gain" />
+        <span className="eyebrow gain" style={{ letterSpacing: ".14em" }}>Qué hacer ahora · tu próximo aporte</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 18, marginBottom: 14 }}>
+        <div>
+          <div className="eyebrow">Riesgo argentino hoy</div>
+          <div className="kpi-num" style={{ fontSize: 30, marginTop: 4, color: "#E0883B" }}>{argPct.toFixed(0)}%</div>
+          <div className="muted mono" style={{ fontSize: 10.5, marginTop: 2 }}>{fmtUSD(argVal)} · sobre cartera total (incl. cripto)</div>
+        </div>
+        <div>
+          <div className="eyebrow cel">Tu objetivo</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 4 }}>
+            <input className="input mono" type="number" value={target} onChange={e => setTarget(e.target.value)} style={{ width: 64, fontSize: 22, padding: "4px 8px", textAlign: "center" }} />
+            <span className="kpi-num cel" style={{ fontSize: 22 }}>%</span>
+          </div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>editable · cuánto querés tener en Argentina</div>
+        </div>
+        <div>
+          <div className="eyebrow">Brecha</div>
+          <div className="kpi-num" style={{ fontSize: 30, marginTop: 4, color: aligned ? "var(--gain)" : "var(--gold)" }}>{aligned ? "✓" : "+" + over.toFixed(0) + " pp"}</div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 2 }}>{aligned ? "en objetivo o por debajo" : "estás por encima"}</div>
+        </div>
+      </div>
+      <div style={{ padding: "13px 15px", borderRadius: 10, background: "rgba(116,172,223,.08)", border: "1px solid #2A4A63", fontSize: 13, lineHeight: 1.55 }}>
+        {aligned
+          ? <span>Estás <strong className="gain">en tu objetivo</strong> (o por debajo). Tus próximos aportes pueden ir a donde prefieras sin desbalancear. Si querés bajar todavía más la exposición argentina, seguí mandándolos a RV global.</span>
+          : <span>Dirigí tus próximos aportes a <strong className="cel">RV global (SPY / ETF / CEDEARs)</strong> en vez de a Argentina. Para llegar de {argPct.toFixed(0)}% a {target.toFixed(0)}% <strong>solo con plata nueva</strong> (sin vender) harían falta <strong className="gold">~{fmtUSD(aporteToTarget)}</strong>{yearsToTarget != null && <span> — a tu ritmo de {fmtUSD(monthly)}/mes, <strong>~{yearsToTarget.toFixed(1)} años</strong></span>}.</span>}
+      </div>
+      {slowDilution && (
+        <div style={{ padding: "11px 14px", borderRadius: 10, background: "rgba(203,164,94,.07)", border: "1px solid #C9A14A55", fontSize: 12, lineHeight: 1.55, marginTop: 8 }}>
+          <AlertTriangle size={12} className="gold" style={{ verticalAlign: -1 }} /> <strong className="gold">La dilución sola es lenta acá.</strong> Estás demasiado por encima del objetivo para arreglarlo solo redirigiendo aportes en un plazo razonable. La palanca rápida es <strong>vender una parte</strong> de tus bonos/acciones argentinas y rotar a RV global — una decisión activa, no pasiva. Redirigir aportes ayuda, pero como complemento, no como solución principal.
+        </div>
+      )}
+      <div style={{ marginTop: 14 }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>Stress test · si tus activos argentinos caen</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {shocks.map(s => {
+            const loss = argVal * s.pct / 100;
+            const impact = totalVal ? loss / totalVal * 100 : 0;
+            return (
+              <div key={s.pct} style={{ padding: "11px 13px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface2)" }}>
+                <div style={{ fontSize: 11.5, color: "#C7D2DB", marginBottom: 3 }}>{s.lab} <span className="muted mono">−{s.pct}%</span></div>
+                <div className="kpi-num loss" style={{ fontSize: 19 }}>−{fmtUSD(loss)}</div>
+                <div className="muted" style={{ fontSize: 10.5, marginTop: 2 }}>= {impact.toFixed(1)}% de tu cartera total</div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="muted" style={{ fontSize: 10.5, marginTop: 10, lineHeight: 1.5 }}>Mide la cola de riesgo que venís cargando en bonos y acciones argentinas: cuánto perderías si el riesgo país se dispara y caen todos juntos. No es una predicción ni un consejo — es la cuenta de tu exposición. Cuanto más cerca del objetivo, más chica esa caída.</p>
+      </div>
+    </div>
+  );
+}
+
 /* ============================== cartera tab ============================== */
-function Cartera({ rows, setHoldings, base, money, refRate }) {
+function Cartera({ rows, setHoldings, base, money, refRate, totals, settings, setSettings }) {
   const [edit, setEdit] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [detail, setDetail] = useState(null);
@@ -712,6 +784,8 @@ function Cartera({ rows, setHoldings, base, money, refRate }) {
           <button className="btn-accent btn" onClick={() => setEdit({ id: uid(), ticker: "", name: "", cls: "MERVAL", broker: "BALANZ", currency: "ARS", qty: 0, investedARS: 0, investedUSD: 0, manualPrice: 0, firstDate: today(), _new: true })}><Plus size={14} />Agregar activo</button>
         </div>
       </div>
+
+      <DecisionPanel rows={rows} totals={totals} settings={settings} setSettings={setSettings} />
 
       <div style={{ display: "grid", gap: 16 }}>
         {groups.map(g => {
